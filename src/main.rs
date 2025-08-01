@@ -1,4 +1,7 @@
+use std::ops::Mul;
+
 //use ::rand::prelude::*;
+use ::rand::{Rng, rng};
 use macroquad::prelude::*;
 //use std::arch::x86_64;
 
@@ -65,33 +68,33 @@ impl TileState {
     }
 }
 
-fn generate_game<const GRID_SIZE: usize>(mine_count: u32) -> [[TileState; GRID_SIZE]; GRID_SIZE] {
-    let mut arr = [[TileState::new_tile(); GRID_SIZE]; GRID_SIZE];
+fn generate_game(mine_count: u32, grid_size: usize) -> Vec<Vec<TileState>> {
+    let mut arr = vec![vec![TileState::new_tile(); grid_size]; grid_size];
+    let mut generator = rng();
 
     let mut bombs_placed: u32 = 0;
     while bombs_placed < mine_count {
-        let x = rand::rand() % GRID_SIZE as u32;
-        let y = rand::rand() % GRID_SIZE as u32;
+        let x = generator.random::<u32>() % grid_size as u32;
+        let y = generator.random::<u32>() % grid_size as u32;
 
         //println!("{:?}, {:?}", x, y);
 
-        if arr[x as usize][y as usize].contents == TileContents::Bomb {
-            continue;
-        } else {
-            arr[x as usize][y as usize].contents = TileContents::Bomb;
-            bombs_placed += 1;
+        match &mut arr[x as usize][y as usize].contents {
+            TileContents::Bomb => continue,
+            t => {
+                *t = TileContents::Bomb;
 
-            // This is a rather disgusting loop saying increment the numbers of neighbouring notes
+                bombs_placed += 1;
 
-            for u in x as i32 - 1..x as i32 + 2 {
-                for v in y as i32 - 1..y as i32 + 2 {
-                    if u >= 0 && u < GRID_SIZE as i32 {
-                        if v >= 0 && v < GRID_SIZE as i32 {
-                            match arr[u as usize][v as usize].contents {
+                // This is a rather disgusting loop saying increment the numbers of neighbouring notes
+
+                for (u, v) in offsets(x as _, y as _) {
+                    if u >= 0 && u < grid_size as i32 {
+                        if v >= 0 && v < grid_size as i32 {
+                            match &mut arr[u as usize][v as usize].contents {
                                 TileContents::Bomb => (),
                                 TileContents::Clear(n) => {
-                                    arr[u as usize][v as usize].contents =
-                                        TileContents::Clear(n + 1)
+                                    *n += 1;
                                 }
                             }
                         }
@@ -104,28 +107,30 @@ fn generate_game<const GRID_SIZE: usize>(mine_count: u32) -> [[TileState; GRID_S
     arr
 }
 
-fn show_tile<const GRID_SIZE: usize>(
-    array: &mut [[TileState; GRID_SIZE]; GRID_SIZE],
-    x: u32,
-    y: u32,
-) {
+fn offsets(x: i32, y: i32) -> impl Iterator<Item = (i32, i32)> {
+    (x - 1..=x + 1).flat_map(move |x| (y - 1..=y + 1).map(move |y| (x, y)))
+}
+
+fn show_tile(array: &mut [Vec<TileState>], x: u32, y: u32) {
     array[x as usize][y as usize].show();
     //println!(array);
 
     if array[x as usize][y as usize].is_zero() {
-        for u in x as i32 - 1..x as i32 + 2 {
-            for v in y as i32 - 1..y as i32 + 2 {
-                if u >= 0 && u < GRID_SIZE as i32 {
-                    if v >= 0 && v < GRID_SIZE as i32 {
-                        if array[u as usize][v as usize].ishidden {
-                            //println!("{:?} {:?}", u, v);
-                            show_tile(array, u as u32, v as u32);
-                        }
+        for (u, v) in offsets(x as _, y as _) {
+            if u >= 0 && u < array.len() as i32 {
+                if v >= 0 && v < array[u as usize].len() as i32 {
+                    if array[u as usize][v as usize].ishidden {
+                        //println!("{:?} {:?}", u, v);
+                        show_tile(array, u as u32, v as u32);
                     }
                 }
             }
         }
     }
+}
+
+fn square<T: Mul<T, Output = T> + Copy>(x: T) -> T {
+    x * x
 }
 
 // MINESWEEPER TASKS
@@ -153,9 +158,11 @@ fn show_tile<const GRID_SIZE: usize>(
 #[macroquad::main("MyGame")]
 async fn main() {
     const GRID_SIZE: usize = 10;
-    let grid = &mut generate_game::<GRID_SIZE>(17);
+    let grid = &mut generate_game(17, GRID_SIZE);
 
     //show_tile(grid, 4, 1);
+
+    debug!("{}", square(2));
 
     loop {
         let squaresize = screen_width().min(screen_height()) / GRID_SIZE as f32;
@@ -184,7 +191,7 @@ async fn main() {
             show_tile(grid, diffx as u32, diffy as u32);
 
             if grid[diffx as usize][diffy as usize].is_bomb() {
-                break;
+                // break;
             }
         }
 
