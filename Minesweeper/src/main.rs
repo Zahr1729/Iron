@@ -19,14 +19,16 @@ struct TileState {
     contents: TileContents,
 }
 
-impl TileState {
-    fn new_tile() -> TileState {
-        TileState {
+impl Default for TileState {
+    fn default() -> Self {
+        Self {
             ishidden: true,
             contents: TileContents::Clear(0),
         }
     }
+}
 
+impl TileState {
     fn draw_tile(&self, x: f32, y: f32, length: f32) {
         /* Improve how this looks */
         match self.ishidden {
@@ -69,7 +71,7 @@ impl TileState {
 }
 
 fn generate_game(mine_count: u32, grid_size: usize) -> Vec<Vec<TileState>> {
-    let mut arr = vec![vec![TileState::new_tile(); grid_size]; grid_size];
+    let mut arr = vec![vec![TileState::default(); grid_size]; grid_size];
     let mut generator = rng();
 
     let mut bombs_placed: u32 = 0;
@@ -158,6 +160,7 @@ fn square<T: Mul<T, Output = T> + Copy>(x: T) -> T {
 #[macroquad::main("MyGame")]
 async fn main() {
     const GRID_SIZE: usize = 10;
+
     let grid = &mut generate_game(17, GRID_SIZE);
 
     //show_tile(grid, 4, 1);
