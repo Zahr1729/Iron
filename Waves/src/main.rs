@@ -1,9 +1,12 @@
-use eframe::{
-    egui::{self, debug_text::print},
-    epaint::tessellator::Path,
+use eframe::egui::{self};
+
+use eframe::egui::{
+    Checkbox, Color32, ComboBox, NumExt as _, Pos2, Response, ScrollArea, Stroke, TextWrapMode,
+    Vec2b, WidgetInfo, WidgetType, remap, vec2,
 };
+
+use std::default;
 use std::{
-    iter::Sum,
     path::PathBuf,
     sync::{Arc, Mutex, mpsc},
     thread, time,
@@ -26,7 +29,7 @@ fn get_data_from_mp3_path(path: PathBuf) -> (Vec<AudioBuffer<f32>>, CodecParamet
     let mss = MediaSourceStream::new(Box::new(src), Default::default());
 
     // Create a probe hint using the file's extension. [Optional]
-    let mut hint = Hint::new();
+    let hint = Hint::new();
 
     // Use the default options for metadata and format readers.
     let meta_opts: MetadataOptions = Default::default();
@@ -144,6 +147,86 @@ fn get_data_from_mp3_path(path: PathBuf) -> (Vec<AudioBuffer<f32>>, CodecParamet
     (packets, codec_params)
 }
 
+#[derive(PartialEq)]
+struct WaveformWidget {
+    vertical: bool,
+    allow_zoom: Vec2b,
+    allow_drag: Vec2b,
+    allow_scroll: Vec2b,
+}
+
+impl Default for WaveformWidget {
+    fn default() -> Self {
+        Self {
+            vertical: true,
+            allow_zoom: [true, false].into(),
+            allow_drag: [true, false].into(),
+            allow_scroll: [true, false].into(),
+        }
+    }
+}
+
+fn get_extreme(chunk: &[f32]) -> f32 {
+    let mut maxvalue = 0.0f32;
+
+    for &d in chunk {
+        if d.abs() > maxvalue.abs() {
+            maxvalue = d;
+        }
+    }
+
+    maxvalue
+}
+
+impl WaveformWidget {
+    fn draw_widget(&self, ui: &mut egui::Ui, waveform: &ImportedTrack) -> Response {
+        let id = ui.id();
+        let step: usize = 1000; // hack
+
+        let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), id) {
+            plot_memory.bounds().range_x()
+        } else {
+            0.02..=1000.0
+        };
+
+        let time_span = range.end() - range.start();
+        let samp_rate = waveform.file_codec_parameters.sample_rate.unwrap() as f64;
+        let total_samples_spanned = time_span * samp_rate;
+        let step = (total_samples_spanned / 1000.0) as usize + 1;
+
+        let time_per_step = step as f64 / samp_rate;
+        let mut chart = egui_plot::BarChart::new(
+            format!("{:?}", waveform.file_path),
+            waveform
+                .file_buffer
+                .iter()
+                .flat_map(|packet| packet.chan(0).chunks(step).map(get_extreme))
+                .enumerate()
+                .filter_map(|(x, y)| {
+                    let x64 = x as f64 * time_per_step;
+                    range.contains(&x64).then(|| (x64, y as f64))
+                })
+                .map(|(x, y)| egui_plot::Bar::new(x, y).width(time_per_step))
+                .collect(),
+        )
+        .color(Color32::LIGHT_BLUE);
+
+        if !self.vertical {
+            chart = chart.horizontal();
+        }
+
+        egui_plot::Plot::new("Normal Distribution Demo")
+            .legend(egui_plot::Legend::default())
+            .clamp_grid(true)
+            .allow_zoom(self.allow_zoom)
+            .allow_drag(self.allow_drag)
+            .allow_scroll(self.allow_scroll)
+            .id(id)
+            .show(ui, |plot_ui| plot_ui.bar_chart(chart))
+            .response
+    }
+}
+
 struct ImportedTrack {
     file_path: PathBuf,
     file_codec_parameters: CodecParameters,
@@ -180,6 +263,8 @@ impl eframe::App for MyEguiApp {
             // UI
             ui.heading("Hello World!");
 
+            let cd: WaveformWidget = WaveformWidget::default();
+
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx.try_recv() {
                 self.active = Some(rx);
@@ -188,6 +273,8 @@ impl eframe::App for MyEguiApp {
             if let Some(lock) = self.active.as_ref() {
                 ui.label(format!("{:?}", lock.file_path));
                 ui.label(format!("{:?}", lock.file_codec_parameters));
+
+                cd.draw_widget(ui, lock);
             }
 
             //ui.label(format!("{:?}", self.active_file_samples));
