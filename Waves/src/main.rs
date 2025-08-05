@@ -1,9 +1,10 @@
-use eframe::egui::{self};
+use eframe::egui::{self, ProgressBar, load};
 
 use eframe::egui::{
     Checkbox, Color32, ComboBox, NumExt as _, Pos2, Response, ScrollArea, Stroke, TextWrapMode,
     Vec2b, WidgetInfo, WidgetType, remap, vec2,
 };
+use eframe::epaint::tessellator::Path;
 
 use std::default;
 use std::{
@@ -198,9 +199,9 @@ impl WaveformWidget {
         let mut chart = egui_plot::BarChart::new(
             format!("{:?}", waveform.file_path),
             waveform
-                .file_buffer
-                .iter()
-                .flat_map(|packet| packet.chan(0).chunks(step).map(get_extreme))
+                .file_left_data
+                .chunks(step)
+                .map(|chunk| get_extreme(chunk))
                 .enumerate()
                 .filter_map(|(x, y)| {
                     let x64 = x as f64 * time_per_step;
@@ -217,11 +218,13 @@ impl WaveformWidget {
 
         egui_plot::Plot::new("Normal Distribution Demo")
             .legend(egui_plot::Legend::default())
-            .clamp_grid(true)
+            .clamp_grid(false)
             .allow_zoom(self.allow_zoom)
             .allow_drag(self.allow_drag)
             .allow_scroll(self.allow_scroll)
             .id(id)
+            .center_y_axis(true)
+            .default_y_bounds(-1.0, 1.0)
             .show(ui, |plot_ui| plot_ui.bar_chart(chart))
             .response
     }
@@ -230,14 +233,31 @@ impl WaveformWidget {
 struct ImportedTrack {
     file_path: PathBuf,
     file_codec_parameters: CodecParameters,
-    file_buffer: Vec<AudioBuffer<f32>>,
+    file_left_data: Vec<f32>,
+    file_right_data: Vec<f32>,
+}
+
+impl Default for ImportedTrack {
+    fn default() -> Self {
+        ImportedTrack {
+            file_path: PathBuf::default(),
+            file_codec_parameters: CodecParameters::default(),
+            file_left_data: Vec::default(),
+            file_right_data: Vec::default(),
+        }
+    }
+}
+
+struct TrackLoad {
+    track: Option<ImportedTrack>,
+    progress: f32,
 }
 
 struct MyEguiApp {
-    active: Option<ImportedTrack>,
+    active: Option<TrackLoad>,
 
-    tx: mpsc::Sender<ImportedTrack>,
-    rx: mpsc::Receiver<ImportedTrack>,
+    tx: mpsc::Sender<TrackLoad>,
+    rx: mpsc::Receiver<TrackLoad>,
 }
 
 impl MyEguiApp {
@@ -263,6 +283,7 @@ impl eframe::App for MyEguiApp {
             // UI
             ui.heading("Hello World!");
 
+            let mut progress = 0.0;
             let cd: WaveformWidget = WaveformWidget::default();
 
             // Take a look at the channel, if theres something new, update the "active file" data
@@ -270,11 +291,28 @@ impl eframe::App for MyEguiApp {
                 self.active = Some(rx);
             }
 
-            if let Some(lock) = self.active.as_ref() {
-                ui.label(format!("{:?}", lock.file_path));
-                ui.label(format!("{:?}", lock.file_codec_parameters));
+            if let Some(loaded) = self.active.as_ref() {
+                progress = loaded.progress;
 
-                cd.draw_widget(ui, lock);
+                match &loaded {
+                    TrackLoad {
+                        track: Some(ImportedTrack),
+                        progress: _,
+                    } => {
+                        ui.label(format!("{:?}", loaded.track.as_ref().unwrap().file_path));
+                        ui.label(format!(
+                            "{:?}",
+                            loaded.track.as_ref().unwrap().file_codec_parameters
+                        ));
+
+                        cd.draw_widget(ui, &loaded.track.as_ref().unwrap());
+                    }
+                    _ => {
+                        let progress_bar: ProgressBar =
+                            ProgressBar::new(progress).show_percentage();
+                        ui.add(progress_bar);
+                    }
+                }
             }
 
             //ui.label(format!("{:?}", self.active_file_samples));
@@ -298,13 +336,35 @@ impl eframe::App for MyEguiApp {
                     thread::spawn(move || {
                         let (file_buffer, file_codec_parameters) =
                             get_data_from_mp3_path(file_path.clone());
+
+                        let mut file_left_data = Vec::new();
+                        let mut file_right_data = Vec::new();
+
+                        let packet_count = file_buffer.len() as f32;
+                        for (i, packet) in file_buffer.iter().enumerate() {
+                            file_left_data.extend_from_slice(packet.chan(0));
+                            file_right_data.extend_from_slice(packet.chan(1));
+
+                            let progress = TrackLoad {
+                                track: None,
+                                progress: (i as f32 / packet_count),
+                            };
+                            tx.send(progress).unwrap();
+                        }
+
                         let track = ImportedTrack {
-                            file_buffer,
                             file_codec_parameters,
                             file_path,
+                            file_left_data,
+                            file_right_data,
                         };
 
-                        tx.send(track).unwrap();
+                        let loaded_track = TrackLoad {
+                            track: Some(track),
+                            progress: 1.0,
+                        };
+
+                        tx.send(loaded_track).unwrap();
                     });
                 }
                 [_file, ..] => println!("Multiple Files inputted!"),
