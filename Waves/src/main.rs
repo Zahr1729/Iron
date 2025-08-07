@@ -12,6 +12,8 @@ mod loader;
 
 use common::Track;
 
+use crate::audio::AudioThread;
+
 struct ProgressTracker {
     prog: f32,
 
@@ -39,15 +41,6 @@ impl ProgressTracker {
         }
     }
 }
-
-// enum AudioControls {
-//     PlayFromSample(Arc<Thing>, usize),
-//     Stop,
-// }
-
-// enum AudioUpdates {
-//     AtSample(usize),
-// }
 
 #[derive(PartialEq)]
 struct WaveformWidget {
@@ -181,9 +174,9 @@ impl WaveformWidget {
 struct MyEguiApp {
     active: Option<Arc<Track>>,
     prog: ProgressTracker,
-    tx: mpsc::Sender<Track>,
-    rx: mpsc::Receiver<Track>,
-    host: Arc<cpal::Host>,
+    tx_loader: mpsc::Sender<Track>,
+    rx_loader: mpsc::Receiver<Track>,
+    audio_thread: audio::AudioThread,
 }
 
 impl MyEguiApp {
@@ -196,11 +189,11 @@ impl MyEguiApp {
         let (tx, rx) = mpsc::channel();
 
         Self {
-            tx,
-            rx,
+            tx_loader: tx,
+            rx_loader: rx,
             active: Default::default(),
             prog: Default::default(),
-            host: Arc::new(cpal::default_host()),
+            audio_thread: AudioThread::new(),
         }
     }
 }
@@ -214,7 +207,7 @@ impl eframe::App for MyEguiApp {
             let cd: WaveformWidget = WaveformWidget::default();
 
             // Take a look at the channel, if theres something new, update the "active file" data
-            if let Ok(rx) = self.rx.try_recv() {
+            if let Ok(rx) = self.rx_loader.try_recv() {
                 self.active = Some(Arc::new(rx));
             }
 
@@ -227,8 +220,10 @@ impl eframe::App for MyEguiApp {
                 if ui.button("play").clicked() {
                     // Output
 
+                    self.audio_thread.send_command(audio::AudioCommand::Stop);
                     // arc and clone because threading (pretty much)
-                    t.clone().play_detatched(self.host.clone());
+                    self.audio_thread
+                        .send_command(audio::AudioCommand::PlayFromSample(t.clone(), 0));
                 }
             } else {
                 self.prog.update();
@@ -251,7 +246,7 @@ impl eframe::App for MyEguiApp {
                     // Close the thread
                     // This is only ok because we have given the thread (through the arc and mutex) control.
                     let file_path = file.path.clone().expect("Web not supported.");
-                    let tx = self.tx.clone();
+                    let tx = self.tx_loader.clone();
                     let prog = self.prog.tx.clone();
                     thread::spawn(move || {
                         let track = Track::get_data_from_mp3_path(file_path.clone(), prog);

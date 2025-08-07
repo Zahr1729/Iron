@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use std::fmt::Debug;
 use symphonia::core::codecs::CodecParameters;
 
 #[derive(Default, Clone)]
@@ -10,13 +11,22 @@ pub struct Track {
     file_data_right: Vec<f32>,
 }
 
+impl Debug for Track {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Track")
+            .field("file_path", &self.file_path)
+            .field("file_codec_parameters", &self.file_codec_parameters)
+            .finish()
+    }
+}
+
 impl Track {
     pub fn new(
         file_path: Option<PathBuf>,
         file_codec_parameters: CodecParameters,
         file_data_left: Vec<f32>,
         file_data_right: Vec<f32>,
-    ) -> Track {
+    ) -> Self {
         Self {
             file_path,
             file_codec_parameters,
