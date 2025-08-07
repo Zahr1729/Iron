@@ -1,20 +1,12 @@
-use eframe::egui::debug_text::print;
-use eframe::egui::{self, ProgressBar, load};
+use eframe::egui;
 
-use eframe::egui::{
-    Checkbox, Color32, ComboBox, NumExt as _, Pos2, Response, ScrollArea, Stroke, TextWrapMode,
-    Vec2b, WidgetInfo, WidgetType, remap, vec2,
-};
-use eframe::epaint::tessellator::Path;
-
-use std::default;
 use std::{
     path::PathBuf,
-    sync::{Arc, Mutex, mpsc},
-    thread, time,
+    sync::{Arc, mpsc},
+    thread,
 };
 use symphonia::core::{
-    audio::{AudioBuffer, AudioBufferRef, Signal},
+    audio::{AudioBufferRef, Signal},
     codecs::{CODEC_TYPE_NULL, CodecParameters, DecoderOptions},
     errors::Error,
     formats::FormatOptions,
@@ -22,6 +14,12 @@ use symphonia::core::{
     meta::MetadataOptions,
     probe::Hint,
 };
+
+mod audio;
+mod common;
+mod loader;
+
+use common::Track;
 
 struct ProgressTracker {
     prog: f32,
@@ -51,159 +49,21 @@ impl ProgressTracker {
     }
 }
 
-#[derive(Default)]
-struct ImportedTrack {
-    file_path: PathBuf,
-    file_codec_parameters: CodecParameters,
-    file_data_left: Vec<f32>,
-}
+// enum AudioControls {
+//     PlayFromSample(Arc<Thing>, usize),
+//     Stop,
+// }
 
-impl ImportedTrack {
-    fn get_data_from_mp3_path(file_path: PathBuf, update_progress: mpsc::Sender<f32>) -> Self {
-        // Open the media source.
-        let src = std::fs::File::open(&file_path).expect("failed to open media");
-
-        // Create the media source stream.
-        let mss = MediaSourceStream::new(Box::new(src), Default::default());
-
-        // Create a probe hint using the file's extension. [Optional]
-        let hint = Hint::new();
-
-        // Use the default options for metadata and format readers.
-        let meta_opts: MetadataOptions = Default::default();
-        let fmt_opts: FormatOptions = Default::default();
-
-        // Probe the media source.
-        let mut probed = symphonia::default::get_probe()
-            .format(&hint, mss, &fmt_opts, &meta_opts)
-            .expect("unsupported format");
-
-        // Get the instantiated format reader.
-        let mut format = probed.format;
-
-        println!("META {:?}", probed.metadata.get());
-
-        // Find the first audio track with a known (decodeable) codec.
-        let track = format
-            .tracks()
-            .iter()
-            .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .expect("no supported audio tracks");
-
-        let file_codec_parameters = track.codec_params.clone();
-
-        // Use the default options for the decoder.
-        let dec_opts: DecoderOptions = Default::default();
-
-        // Create a decoder for the track.
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &dec_opts)
-            .expect("unsupported codec");
-
-        // Store the track identifier, it will be used to filter packets.
-        let track_id = track.id;
-
-        // The decode loop.
-        let n_frames = file_codec_parameters.n_frames.unwrap() as usize;
-        let mut file_data_left = Vec::with_capacity(n_frames);
-
-        let mut prog = 0.0;
-        let total = n_frames as f32;
-
-        loop {
-            // Get the next packet from the media format.
-            let packet = match format.next_packet() {
-                Ok(packet) => packet,
-                Err(Error::ResetRequired) => {
-                    // The track list has been changed. Re-examine it and create a new set of decoders,
-                    // then restart the decode loop. This is an advanced feature and it is not
-                    // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
-                    // for chained OGG physical streams.
-                    unimplemented!();
-                }
-                Err(Error::LimitError(d)) => {
-                    //println!("Limit {d}");
-                    break;
-                }
-                Err(Error::IoError(d)) => {
-                    //println!("IO {d}");
-                    break;
-                    // Seemingly necessary at the end of the loop
-                }
-                Err(err) => {
-                    // A unrecoverable error occured, halt decoding.
-                    panic!("{}", err);
-                }
-            };
-
-            // Consume any new metadata that has been read since the last packet.
-            while !format.metadata().is_latest() {
-                // Pop the old head of the metadata queue.
-                format.metadata().pop();
-
-                // Consume the new metadata at the head of the metadata queue.
-
-                // if let Some(rev) = format.metadata().current() {
-                //     // Consume the new metadata at the head of the metadata queue.
-                //     println!("META: {:?}", rev);
-                // }
-            }
-
-            // If the packet does not belong to the selected track, skip over it.
-            if packet.track_id() != track_id {
-                continue;
-            }
-
-            // Decode the packet into audio samples.
-            match decoder.decode(&packet) {
-                Ok(decoded) => {
-                    match decoded {
-                        AudioBufferRef::F32(buf) => {
-                            // channel 0 is left channel 1 is right anything else is death.
-                            // this stores both of them
-                            file_data_left.extend_from_slice(buf.chan(0));
-                            prog += buf.chan(0).len() as f32 / total;
-
-                            update_progress.send(prog).unwrap();
-                        }
-                        _ => {
-                            // Repeat for the different sample formats.
-                            unimplemented!()
-                        }
-                    }
-                    // Consume the decoded audio samples (see below).
-                }
-                Err(Error::IoError(_)) => {
-                    // The packet failed to decode due to an IO error, skip the packet.
-                    continue;
-                }
-                Err(Error::DecodeError(_)) => {
-                    // The packet failed to decode due to invalid data, skip the packet.
-                    continue;
-                }
-                Err(err) => {
-                    // An unrecoverable error occured, halt decoding.
-                    panic!("{}", err);
-                }
-            }
-        }
-
-        // TRACK HOLDS IMPORTANT METADATA
-
-        Self {
-            file_path,
-            file_codec_parameters,
-            file_data_left,
-        }
-    }
-}
+// enum AudioUpdates {
+//     AtSample(usize),
+// }
 
 #[derive(PartialEq)]
 struct WaveformWidget {
     vertical: bool,
-    allow_zoom: Vec2b,
-    allow_drag: Vec2b,
-    allow_scroll: Vec2b,
+    allow_zoom: egui::Vec2b,
+    allow_drag: egui::Vec2b,
+    allow_scroll: egui::Vec2b,
 }
 
 impl Default for WaveformWidget {
@@ -240,7 +100,7 @@ fn get_extreme(chunk: &[f32]) -> f32 {
 }
 
 impl WaveformWidget {
-    fn draw_widget(&self, ui: &mut egui::Ui, waveform: &ImportedTrack) -> Response {
+    fn draw_widget(&self, ui: &mut egui::Ui, waveform: &Track) -> egui::Response {
         let id = ui.id();
 
         let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), id) {
@@ -250,7 +110,7 @@ impl WaveformWidget {
         };
 
         let time_span = range.end() - range.start();
-        let samp_rate = waveform.file_codec_parameters.sample_rate.unwrap() as f64;
+        let samp_rate = waveform.file_codec_parameters().sample_rate.unwrap() as f64;
         let total_samples_spanned = time_span * samp_rate;
         let step = (total_samples_spanned / 500.0) as usize + 1;
         let time_per_step = step as f64 / samp_rate;
@@ -295,11 +155,9 @@ impl WaveformWidget {
         // Get the wave points data we want
 
         let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
-        let rough_end = ((range.end() * samp_rate) as usize + 1).min(waveform.file_data_left.len());
+        let rough_end = ((range.end() * samp_rate) as usize + 1).min(waveform.file_data().0.len());
 
-        println!("{range:?}, {:?}", rough_start..rough_end);
-
-        let coords: Vec<_> = waveform.file_data_left[rough_start..rough_end]
+        let coords: Vec<_> = waveform.file_data().0[rough_start..rough_end]
             .chunks(step)
             .enumerate()
             .filter_map(|(x, chunk)| {
@@ -310,11 +168,9 @@ impl WaveformWidget {
             })
             .collect();
 
-        println!("{}", coords.len());
-
         let line = egui_plot::Line::new("Waveform", coords)
             .fill(0.0)
-            .color(Color32::PURPLE)
+            .color(egui::Color32::PURPLE)
             .fill_alpha(0.4);
 
         egui_plot::Plot::new("Normal Distribution Demo")
@@ -332,10 +188,11 @@ impl WaveformWidget {
 }
 
 struct MyEguiApp {
-    active: Option<ImportedTrack>,
+    active: Option<Arc<Track>>,
     prog: ProgressTracker,
-    tx: mpsc::Sender<ImportedTrack>,
-    rx: mpsc::Receiver<ImportedTrack>,
+    tx: mpsc::Sender<Track>,
+    rx: mpsc::Receiver<Track>,
+    host: Arc<cpal::Host>,
 }
 
 impl MyEguiApp {
@@ -352,6 +209,7 @@ impl MyEguiApp {
             rx,
             active: Default::default(),
             prog: Default::default(),
+            host: Arc::new(cpal::default_host()),
         }
     }
 }
@@ -366,14 +224,21 @@ impl eframe::App for MyEguiApp {
 
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx.try_recv() {
-                self.active = Some(rx);
+                self.active = Some(Arc::new(rx));
             }
 
             if let Some(t) = self.active.as_ref() {
-                ui.label(format!("{:?}", t.file_path));
-                ui.label(format!("{:?}", t.file_codec_parameters));
+                ui.label(format!("{:?}", t.file_path()));
+                ui.label(format!("{:?}", t.file_codec_parameters()));
 
                 cd.draw_widget(ui, &t);
+
+                if ui.button("play").clicked() {
+                    // Output
+
+                    // arc and clone because threading (pretty much)
+                    t.clone().play_detatched(self.host.clone());
+                }
             } else {
                 self.prog.update();
                 self.prog.ui(ui);
@@ -398,7 +263,7 @@ impl eframe::App for MyEguiApp {
                     let tx = self.tx.clone();
                     let prog = self.prog.tx.clone();
                     thread::spawn(move || {
-                        let track = ImportedTrack::get_data_from_mp3_path(file_path.clone(), prog);
+                        let track = Track::get_data_from_mp3_path(file_path.clone(), prog);
 
                         // let mut file_left_data = Vec::new();
                         // let mut file_right_data = Vec::new();
