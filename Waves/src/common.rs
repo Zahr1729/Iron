@@ -1,18 +1,6 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, mpsc},
-    thread,
-};
+use std::path::{Path, PathBuf};
 
-use symphonia::core::{
-    audio::{AudioBufferRef, Signal},
-    codecs::{CODEC_TYPE_NULL, CodecParameters, DecoderOptions},
-    errors::Error,
-    formats::FormatOptions,
-    io::MediaSourceStream,
-    meta::MetadataOptions,
-    probe::Hint,
-};
+use symphonia::core::codecs::CodecParameters;
 
 #[derive(Default, Clone)]
 pub struct Track {

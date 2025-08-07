@@ -1,14 +1,8 @@
-use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, mpsc},
-    thread,
-};
-
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use std::{path::PathBuf, sync::mpsc};
 
 use symphonia::core::{
     audio::{AudioBufferRef, Signal},
-    codecs::{CODEC_TYPE_NULL, CodecParameters, DecoderOptions},
+    codecs::{CODEC_TYPE_NULL, DecoderOptions},
     errors::Error,
     formats::FormatOptions,
     io::MediaSourceStream,

@@ -1,19 +1,10 @@
 use eframe::egui;
 
 use std::{
-    path::PathBuf,
     sync::{Arc, mpsc},
     thread,
 };
-use symphonia::core::{
-    audio::{AudioBufferRef, Signal},
-    codecs::{CODEC_TYPE_NULL, CodecParameters, DecoderOptions},
-    errors::Error,
-    formats::FormatOptions,
-    io::MediaSourceStream,
-    meta::MetadataOptions,
-    probe::Hint,
-};
+use symphonia::core::audio::Signal;
 
 mod audio;
 mod common;

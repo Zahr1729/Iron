@@ -1,8 +1,7 @@
 use crate::common::Track;
 
 use std::{
-    path::{Path, PathBuf},
-    sync::{Arc, mpsc},
+    sync::Arc,
     thread,
 };
 
