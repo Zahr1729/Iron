@@ -5,8 +5,10 @@ use std::{
     thread,
 };
 
-use cpal::Host;
-use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use cpal::{
+    Device, Stream,
+    traits::{DeviceTrait, HostTrait, StreamTrait},
+};
 
 /// This we want to recieve
 #[derive(Debug)]
@@ -16,14 +18,60 @@ pub enum AudioCommand {
     Stop,
 }
 
-/// This we want to send
-pub enum AudioUpdate {
-    AtSample(usize),
-}
+/// This we want to send back (if anything at all)
+pub enum AudioUpdate {}
 
 pub struct AudioThread {
     commands: mpsc::Sender<AudioCommand>,
     updates: mpsc::Receiver<AudioUpdate>,
+}
+
+fn write_data(
+    output: &mut [f32],
+    channels: usize,
+    // this is the function saying what the next left right data should be
+    next_frame: &mut dyn FnMut() -> (f32, f32),
+) {
+    // frame is the instance in time
+    for frame in output.chunks_mut(channels) {
+        let (left, right): (f32, f32) = next_frame();
+        frame[0] = left;
+        frame[1] = right;
+    }
+}
+
+fn get_stream_from_sample(output_device: Device, track: Arc<Track>, start_point: usize) -> Stream {
+    let config = output_device.default_output_config().unwrap().config();
+    let buffer_size = track.file_data().0.len();
+    let channels = config.channels as usize;
+    let mut sample_clock: usize = start_point;
+
+    // We cloning self because this function needs to access (but might outlive the thread (but it won't))
+    let s = track.clone();
+    let mut next_value = move || {
+        if sample_clock + 1 >= buffer_size {
+            // if we've gone over the limit of the sample just play nothing
+            (0.0, 0.0)
+        } else {
+            sample_clock = sample_clock + 1;
+            (s.file_data().0[sample_clock], s.file_data().1[sample_clock])
+        }
+    };
+
+    let err_fn = |err| println!("an error occurred on stream: {err}");
+
+    let stream = output_device
+        .build_output_stream(
+            &config,
+            move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
+                write_data(data, channels, &mut next_value)
+            },
+            err_fn,
+            None,
+        )
+        .unwrap();
+
+    stream
 }
 
 impl AudioThread {
@@ -35,14 +83,14 @@ impl AudioThread {
             let host: cpal::Host = cpal::default_host();
 
             let output_device = host.default_output_device().unwrap();
-
             let mut current_stream: Option<cpal::Stream> = None;
+            let mut current_sample: usize;
 
             loop {
                 // Collect new info
                 let command = rx_commands.recv().unwrap();
 
-                // Something something
+                // Do stuff with new audio information
 
                 match command {
                     AudioCommand::Stop => {
@@ -50,57 +98,15 @@ impl AudioThread {
                         current_stream = None;
                     }
                     AudioCommand::PlayFromSample(track, start_point) => {
-                        let config = output_device.default_output_config().unwrap().config();
-
-                        let buffer_size = track.file_data().0.len();
-                        let channels = config.channels as usize;
-
-                        let mut sample_clock: usize = start_point;
-
-                        // We cloning self because this function needs to access (but might outlive the thread (but it won't))
-                        let s = track.clone();
-                        let mut next_value = move || {
-                            sample_clock = sample_clock + 1;
-
-                            if sample_clock >= buffer_size {
-                                (0.0, 0.0)
-                            } else {
-                                (s.file_data().0[sample_clock], s.file_data().1[sample_clock])
-                            }
-                        };
-
-                        let err_fn = |err| println!("an error occurred on stream: {err}");
-
-                        let stream = output_device
-                            .build_output_stream(
-                                &config,
-                                move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                                    write_data(data, channels, &mut next_value)
-                                },
-                                err_fn,
-                                None,
-                            )
-                            .unwrap();
-                        stream.play().unwrap();
-                        current_stream = Some(stream);
-
-                        fn write_data(
-                            output: &mut [f32],
-                            channels: usize,
-                            // this is the function saying what the next left right data should be
-                            next_frame: &mut dyn FnMut() -> (f32, f32),
-                        ) {
-                            // frame is the instance in time
-                            for frame in output.chunks_mut(channels) {
-                                let (left, right): (f32, f32) = next_frame();
-                                frame[0] = left;
-                                frame[1] = right;
-                            }
-                        }
+                        let new_stream =
+                            get_stream_from_sample(output_device.clone(), track, start_point);
+                        new_stream.play().unwrap();
+                        //current_stream.inspect(|s| s.pause().unwrap());
+                        current_stream = Some(new_stream);
                     }
                 }
 
-                // send updates back.
+                // Send relevant updates (currently nothing)
             }
         });
 
@@ -111,7 +117,7 @@ impl AudioThread {
     }
 
     pub fn send_command(&self, command: AudioCommand) {
-        self.commands.send(command);
+        let _ = self.commands.send(command);
     }
 }
 

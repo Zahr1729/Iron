@@ -76,11 +76,11 @@ impl Track {
                     // for chained OGG physical streams.
                     unimplemented!();
                 }
-                Err(Error::LimitError(d)) => {
+                Err(Error::LimitError(_d)) => {
                     //println!("Limit {d}");
                     break;
                 }
-                Err(Error::IoError(d)) => {
+                Err(Error::IoError(_d)) => {
                     //println!("IO {d}");
                     break;
                     // Seemingly necessary at the end of the loop
