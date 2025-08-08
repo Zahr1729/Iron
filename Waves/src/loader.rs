@@ -13,7 +13,10 @@ use symphonia::core::{
 use crate::common::Track;
 
 impl Track {
-    pub fn get_data_from_mp3_path(file_path: PathBuf, update_progress: mpsc::Sender<f32>) -> Self {
+    pub fn get_data_from_mp3_path(
+        file_path: PathBuf,
+        update_progress: mpsc::Sender<f32>,
+    ) -> Result<Self, Error> {
         // Open the media source.
         let src = std::fs::File::open(&file_path).expect("failed to open media");
 
@@ -28,9 +31,8 @@ impl Track {
         let fmt_opts: FormatOptions = Default::default();
 
         // Probe the media source.
-        let mut probed = symphonia::default::get_probe()
-            .format(&hint, mss, &fmt_opts, &meta_opts)
-            .expect("unsupported format");
+        let mut probed =
+            symphonia::default::get_probe().format(&hint, mss, &fmt_opts, &meta_opts)?;
 
         // Get the instantiated format reader.
         let mut format = probed.format;
@@ -42,7 +44,7 @@ impl Track {
             .tracks()
             .iter()
             .find(|t| t.codec_params.codec != CODEC_TYPE_NULL)
-            .expect("no supported audio tracks");
+            .ok_or(Error::Unsupported("no supported audio tracks"))?;
 
         let file_codec_parameters = track.codec_params.clone();
 
@@ -50,9 +52,7 @@ impl Track {
         let dec_opts: DecoderOptions = Default::default();
 
         // Create a decoder for the track.
-        let mut decoder = symphonia::default::get_codecs()
-            .make(&track.codec_params, &dec_opts)
-            .expect("unsupported codec");
+        let mut decoder = symphonia::default::get_codecs().make(&track.codec_params, &dec_opts)?;
 
         // Store the track identifier, it will be used to filter packets.
         let track_id = track.id;
@@ -69,17 +69,6 @@ impl Track {
             // Get the next packet from the media format.
             let packet = match format.next_packet() {
                 Ok(packet) => packet,
-                Err(Error::ResetRequired) => {
-                    // The track list has been changed. Re-examine it and create a new set of decoders,
-                    // then restart the decode loop. This is an advanced feature and it is not
-                    // unreasonable to consider this "the end." As of v0.5.0, the only usage of this is
-                    // for chained OGG physical streams.
-                    unimplemented!();
-                }
-                Err(Error::LimitError(_d)) => {
-                    //println!("Limit {d}");
-                    break;
-                }
                 Err(Error::IoError(_d)) => {
                     //println!("IO {d}");
                     break;
@@ -87,7 +76,7 @@ impl Track {
                 }
                 Err(err) => {
                     // A unrecoverable error occured, halt decoding.
-                    panic!("{}", err);
+                    return Err(err);
                 }
             };
 
@@ -139,18 +128,18 @@ impl Track {
                 }
                 Err(err) => {
                     // An unrecoverable error occured, halt decoding.
-                    panic!("{}", err);
+                    return Err(err);
                 }
             }
         }
 
         // TRACK HOLDS IMPORTANT METADATA
 
-        Track::new(
+        Ok(Track::new(
             Some(file_path),
             file_codec_parameters,
             file_data_left,
             file_data_right,
-        )
+        ))
     }
 }
