@@ -72,7 +72,6 @@ impl eframe::App for MyEguiApp {
 
         egui::CentralPanel::default().show(ctx, |ui| {
             // UI
-            ui.heading("Hello World!");
 
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx_loader.try_recv() {
@@ -80,11 +79,8 @@ impl eframe::App for MyEguiApp {
             }
 
             if let Some(t) = self.active_track.as_ref() {
-                ui.label(format!("{:?}", t.file_path()));
-                ui.label(format!("{:?}", t.file_codec_parameters()));
-
-                let cd = ui::WaveformWidget::new(t);
-                cd.draw_widget(ui, &t);
+                let waveform_widget = ui::WaveformWidget::new(t);
+                ui.add(waveform_widget);
 
                 if ui.button("play").clicked() {
                     // Output

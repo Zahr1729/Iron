@@ -36,7 +36,7 @@ impl Widget for &mut ProgressTracker {
         }
 
         if self.progress > 0.0 {
-            ui.add(egui::ProgressBar::new(self.progress).desired_width(50.0))
+            ui.add(egui::ProgressBar::new(self.progress).desired_width(100.0))
         } else {
             ui.response()
         }
@@ -108,6 +108,8 @@ impl Widget for &mut ThreadTracker {
             if r.clicked() {
                 self.should_dismiss = true;
             }
+        } else {
+            r = r.on_hover_text("In Progress");
         }
         r
     }
@@ -155,91 +157,76 @@ fn get_extreme(chunk: &[f32]) -> f32 {
     maxvalue
 }
 
-impl WaveformWidget<'_> {
-    pub fn draw_widget(&self, ui: &mut egui::Ui, waveform: &Track) -> egui::Response {
-        let id = ui.id();
+impl Widget for WaveformWidget<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let plot_id = ui.id();
 
-        let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), id) {
+        // Initialise data eg getting start stop times and step size
+        let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), plot_id) {
             plot_memory.bounds().range_x()
         } else {
             0.02..=1000.0
         };
 
         let time_span = range.end() - range.start();
-        let samp_rate = waveform.file_codec_parameters().sample_rate.unwrap() as f64;
+        let samp_rate = self.track.file_codec_parameters().sample_rate.unwrap() as f64;
         let total_samples_spanned = time_span * samp_rate;
         let step = (total_samples_spanned / 500.0) as usize + 1;
         let time_per_step = step as f64 / samp_rate;
         let time_per_sample = 1.0 / samp_rate;
 
-        // Goal is to force the stepsize to be close to multiples / factors of the packet_size
-        // to make things efficient and reduce the possibility of artefacts
-        // we will also try a way to make things not bunch up on any one side
-
-        // let relative_step_to_packet = true_step as f64 / packet_size as f64;
-        // let log_value = relative_step_to_packet.log2();
-        // let step = (2 >> log_value.round() as i32) as usize * packet_size;
-
-        // println!("{true_step}, {packet_size}, {step}");
-
-        // Now lets chunk the packets up to the size of true_step and get some useful data
-        // let plot_data;
-
-        // if (log_value < 1.0)
-        // {
-        //     plot_data = waveform.file_buffer.iter().map(|packet| {packet.chan(0).chunks(step).map(get_extreme)})
-        // } else {
-        //     let basic_plot_data = waveform.file_buffer.iter().map(|packet| {packet.chan(0).chunks(step).map(get_extreme)})
-        // }
-
-        // let mut chart = egui_plot::BarChart::new(
-        //     format!("{:?}", waveform.file_path),
-        //     waveform
-        //         .file_left_data
-        //         .chunks(step)
-        //         .map(|chunk| get_extreme(chunk))
-        //         .enumerate()
-        //         .filter_map(|(x, y)| {
-        //             let x64 = x as f64 * time_per_step;
-        //             range.contains(&x64).then(|| (x64, y as f64))
-        //         })
-        //         .map(|(x, y)| egui_plot::Bar::new(x, y).width(time_per_step))
-        //         .collect(),
-        // )
-        // .color(Color32::LIGHT_BLUE);
-
-        // Get the wave points data we want
-
+        // Sample over an appropriate data range to get coords for
         let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
-        let rough_end = ((range.end() * samp_rate) as usize + 1).min(waveform.file_data().0.len());
+        let rough_end =
+            ((range.end() * samp_rate) as usize + 1).min(self.track.file_data().0.len());
 
-        let coords: Vec<_> = waveform.file_data().0[rough_start..rough_end]
+        let coords_left: Vec<_> = self.track.file_data().0[rough_start..rough_end]
             .chunks(step)
             .enumerate()
             .filter_map(|(x, chunk)| {
                 let x64 = (x as f64 * time_per_step) + (rough_start as f64 * time_per_sample);
                 range
                     .contains(&x64)
-                    .then(|| [x64, get_extreme(chunk) as f64])
+                    .then(|| [x64, get_extreme(chunk) as f64 / 2.0 + 0.5])
             })
             .collect();
 
-        let line = egui_plot::Line::new("Waveform", coords)
-            .fill(0.0)
+        let coords_right: Vec<_> = self.track.file_data().1[rough_start..rough_end]
+            .chunks(step)
+            .enumerate()
+            .filter_map(|(x, chunk)| {
+                let x64 = (x as f64 * time_per_step) + (rough_start as f64 * time_per_sample);
+                range
+                    .contains(&x64)
+                    .then(|| [x64, get_extreme(chunk) as f64 / 2.0 - 0.5]) // + 1.0 for being the second track
+            })
+            .collect();
+
+        // Plot things
+        let line_left = egui_plot::Line::new("left", coords_left)
+            .fill(0.5)
             .color(egui::Color32::PURPLE)
             .fill_alpha(0.4);
 
-        egui_plot::Plot::new("Normal Distribution Demo")
+        let line_right = egui_plot::Line::new("right", coords_right)
+            .fill(-0.5)
+            .color(egui::Color32::BLUE)
+            .fill_alpha(0.4);
+
+        egui_plot::Plot::new("waveform")
             .legend(egui_plot::Legend::default())
             .clamp_grid(false)
             .allow_zoom(self.allow_zoom)
             .allow_drag(self.allow_drag)
             .allow_scroll(self.allow_scroll)
-            .id(id)
             .center_y_axis(true)
+            .id(plot_id)
             .height(300.0)
             .default_y_bounds(-1.0, 1.0)
-            .show(ui, |plot_ui| plot_ui.line(line))
+            .show(ui, |plot_ui| {
+                plot_ui.line(line_left);
+                plot_ui.line(line_right);
+            })
             .response
     }
 }
