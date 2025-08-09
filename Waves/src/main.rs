@@ -14,7 +14,7 @@ mod ui;
 use common::Track;
 
 use crate::{
-    audio::AudioThread,
+    audio::{AudioThread, AudioUpdate},
     ui::{ProgressTracker, ThreadTracker},
 };
 
@@ -23,6 +23,8 @@ struct MyEguiApp {
     tx_loader: mpsc::Sender<Track>,
     rx_loader: mpsc::Receiver<Track>,
     audio_thread: audio::AudioThread,
+    current_sample: usize,
+    is_paused: bool,
     // Must store
     // - widget
     //   - progress bar if in progressed (not completed)
@@ -46,12 +48,17 @@ impl MyEguiApp {
             active_track: Default::default(),
             audio_thread: AudioThread::new(),
             ops_in_progress: Default::default(),
+            current_sample: 0,
+            is_paused: true,
         }
     }
 }
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // force it to update every frame even if nothing is happening
+        ctx.request_repaint();
+
         // Bottom Panel
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
             // Iterate through all progress bars and display on the bottom of the screen
@@ -73,32 +80,44 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             // UI
 
+            while let Ok(update) = self.audio_thread.updates.try_recv() {
+                match update {
+                    AudioUpdate::CurrentSample(s) => {
+                        println!("{s}");
+                        self.current_sample = s;
+                    }
+                }
+            }
+
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx_loader.try_recv() {
                 self.active_track = Some(Arc::new(rx));
             }
 
             if let Some(t) = self.active_track.as_ref() {
-                let waveform_widget = ui::WaveformWidget::new(t);
+                let waveform_widget = ui::WaveformWidget::new(
+                    t,
+                    self.current_sample,
+                    self.audio_thread.commands.clone(),
+                );
                 ui.add(waveform_widget);
 
-                if ui.button("play").clicked() {
-                    // Output
-                    self.audio_thread.send_command(audio::AudioCommand::Stop);
-                    // arc and clone because threading (pretty much)
-                    self.audio_thread
-                        .send_command(audio::AudioCommand::PlayFromSample(t.clone(), 0));
-                }
-
-                if ui.button("stop").clicked() {
-                    // Output
-                    self.audio_thread.send_command(audio::AudioCommand::Stop);
+                // Perhaps group this all inside playpausebutton
+                let play_pause_button = ui::PlayPauseButton::new(self.is_paused);
+                let response = ui.add(play_pause_button);
+                if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
+                    match self.is_paused {
+                        true => self
+                            .audio_thread
+                            .send_command(audio::AudioCommand::PlayFrom(
+                                t.clone(),
+                                self.current_sample,
+                            )),
+                        false => self.audio_thread.send_command(audio::AudioCommand::Stop),
+                    }
+                    self.is_paused = !self.is_paused;
                 }
             }
-
-            //ui.label(format!("{:?}", self.active_file_samples));
-
-            /////////////////////////////
 
             // Rip the data from the file (drag and drop)
             let dropped = ctx.input(|i| i.raw.dropped_files.clone());
@@ -135,13 +154,14 @@ impl eframe::App for MyEguiApp {
 
 fn main() {
     // Activate drag and drop (not necessary)
-    let native_options = eframe::NativeOptions::default();
-    native_options.viewport.with_drag_and_drop(true);
+    let mut options = eframe::NativeOptions::default();
+    //options.viewport.
+    options.viewport.drag_and_drop = Some(true);
 
     // if its native
     let _ = eframe::run_native(
         "My egui App",
-        eframe::NativeOptions::default(),
+        options,
         Box::new(|cc| Ok(Box::new(MyEguiApp::new(cc)))),
     );
 

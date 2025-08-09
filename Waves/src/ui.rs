@@ -1,16 +1,43 @@
-use eframe::{
-    egui::{self, Response, Widget},
-    glow::XOR,
-};
+use eframe::egui::{self, Response, Widget};
 use symphonia::core::errors::Error;
 
 use std::{
     mem,
-    sync::{Arc, mpsc},
-    thread::{self, JoinHandle},
+    sync::{
+        Arc,
+        mpsc::{self, Sender},
+    },
+    thread::JoinHandle,
 };
 
-use crate::common::Track;
+use crate::{audio::AudioCommand, common::Track};
+
+pub struct PlayPauseButton {
+    is_paused: bool,
+    play_text: String,
+    pause_text: String,
+}
+
+impl PlayPauseButton {
+    pub fn new(is_paused: bool) -> Self {
+        Self {
+            is_paused,
+            play_text: "play".to_string(),
+            pause_text: "pause".to_string(),
+        }
+    }
+}
+
+impl Widget for PlayPauseButton {
+    fn ui(self, ui: &mut egui::Ui) -> Response {
+        let button = match self.is_paused {
+            true => ui.button(self.play_text),
+            false => ui.button(self.pause_text),
+        };
+
+        button
+    }
+}
 
 pub struct ProgressTracker {
     progress: f32,
@@ -116,21 +143,29 @@ impl Widget for &mut ThreadTracker {
 }
 
 pub struct WaveformWidget<'a> {
-    track: &'a Track,
-    vertical: bool,
+    track: &'a Arc<Track>,
+    current_sample: usize,
+    _vertical: bool,
     allow_zoom: egui::Vec2b,
     allow_drag: egui::Vec2b,
     allow_scroll: egui::Vec2b,
+    tx_commands: Sender<AudioCommand>,
 }
 
 impl<'a> WaveformWidget<'a> {
-    pub fn new(track: &'a Track) -> Self {
+    pub fn new(
+        track: &'a Arc<Track>,
+        current_sample: usize,
+        tx_commands: Sender<AudioCommand>,
+    ) -> Self {
         Self {
             track,
-            vertical: true,
+            current_sample,
+            _vertical: true,
             allow_zoom: [true, false].into(),
             allow_drag: [true, false].into(),
             allow_scroll: [true, false].into(),
+            tx_commands,
         }
     }
 }
@@ -158,7 +193,7 @@ fn get_extreme(chunk: &[f32]) -> f32 {
 }
 
 impl Widget for WaveformWidget<'_> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+    fn ui(mut self, ui: &mut egui::Ui) -> egui::Response {
         let plot_id = ui.id();
 
         // Initialise data eg getting start stop times and step size
@@ -213,7 +248,17 @@ impl Widget for WaveformWidget<'_> {
             .color(egui::Color32::BLUE)
             .fill_alpha(0.4);
 
-        egui_plot::Plot::new("waveform")
+        // Draw the timestamp line
+        let line_time = egui_plot::Line::new(
+            "time",
+            vec![
+                [self.current_sample as f64 * time_per_sample, 1.0],
+                [self.current_sample as f64 * time_per_sample, -1.0],
+            ],
+        )
+        .color(egui::Color32::WHITE);
+
+        let plt = egui_plot::Plot::new("waveform")
             .legend(egui_plot::Legend::default())
             .clamp_grid(false)
             .allow_zoom(self.allow_zoom)
@@ -226,7 +271,26 @@ impl Widget for WaveformWidget<'_> {
             .show(ui, |plot_ui| {
                 plot_ui.line(line_left);
                 plot_ui.line(line_right);
-            })
-            .response
+                plot_ui.line(line_time);
+                plot_ui.pointer_coordinate()
+            });
+
+        if plt.response.clicked() {
+            if let Some(coord) = plt.inner {
+                let x_time = coord.x.max(0.0).min(
+                    self.track.file_codec_parameters().n_frames.unwrap() as f64 * time_per_sample,
+                );
+
+                let x_sample = (x_time * samp_rate) as usize;
+                println!("{x_time}");
+                self.tx_commands
+                    .send(AudioCommand::RelocateTo(self.track.clone(), x_sample))
+                    .expect("Can't reset time");
+
+                self.current_sample = x_sample;
+            }
+        }
+
+        plt.response
     }
 }
