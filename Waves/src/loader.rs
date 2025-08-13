@@ -10,7 +10,7 @@ use symphonia::core::{
     probe::Hint,
 };
 
-use crate::common::Track;
+use crate::common::{MipMapChannel, Track};
 
 impl Track {
     pub fn get_data_from_mp3_path(
@@ -63,7 +63,7 @@ impl Track {
         let mut file_data_right = Vec::with_capacity(n_frames);
 
         let mut prog = 0.0;
-        let total = n_frames as f32;
+        let total = n_frames as f32; // needs to be double for the mipmap
 
         loop {
             // Get the next packet from the media format.
@@ -133,13 +133,16 @@ impl Track {
             }
         }
 
+        // Now that we have the generic file data we want to iterate through a few mip map sizes, makes sense to iterate until we get sufficiently far
+        let cutoff_index = 5;
+
         // TRACK HOLDS IMPORTANT METADATA
 
         Ok(Track::new(
             Some(file_path),
             file_codec_parameters,
-            file_data_left,
-            file_data_right,
+            MipMapChannel::new(file_data_left, cutoff_index),
+            MipMapChannel::new(file_data_right, cutoff_index),
         ))
     }
 }

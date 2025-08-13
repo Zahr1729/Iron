@@ -39,7 +39,7 @@ fn get_stream_from_sample(
     tx: mpsc::Sender<AudioUpdate>,
 ) -> Stream {
     let config = output_device.default_output_config().unwrap().config();
-    let buffer_size = track.file_data().0.len();
+    let buffer_size = track.sample_data().0.len();
     let channels = config.channels as usize;
     let mut sample_clock: usize = start_point;
 
@@ -52,8 +52,8 @@ fn get_stream_from_sample(
         } else {
             sample_clock = sample_clock + 1;
             (
-                s.file_data().0[sample_clock],
-                s.file_data().1[sample_clock],
+                s.sample_data().0[sample_clock],
+                s.sample_data().1[sample_clock],
                 sample_clock,
             )
         }
@@ -121,7 +121,6 @@ impl AudioThread {
                         current_stream = None;
                     }
                     AudioCommand::RelocateTo(track, sample) => {
-                        println!("SAMPLE: {sample}");
                         if current_stream.is_some() {
                             let new_stream = get_stream_from_sample(
                                 output_device.clone(),

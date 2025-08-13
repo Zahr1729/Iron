@@ -1,8 +1,10 @@
 use eframe::egui::{self, Response, Widget};
+use egui_plot::GridMark;
 use symphonia::core::errors::Error;
 
 use std::{
     mem,
+    ops::RangeInclusive,
     sync::{
         Arc,
         mpsc::{self, Sender},
@@ -10,7 +12,10 @@ use std::{
     thread::JoinHandle,
 };
 
-use crate::{audio::AudioCommand, common::Track};
+use crate::{
+    audio::AudioCommand,
+    common::{self, Track},
+};
 
 pub struct PlayPauseButton {
     is_paused: bool,
@@ -168,6 +173,97 @@ impl<'a> WaveformWidget<'a> {
             tx_commands,
         }
     }
+
+    fn compute_line_data(
+        &self,
+        range: RangeInclusive<f64>,
+        samp_rate: f64,
+    ) -> Vec<egui_plot::Line<'_>> {
+        const FILLED_LIMIT: usize = 32;
+
+        let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
+        let rough_end =
+            ((range.end() * samp_rate) as usize + 1).min(self.track.sample_data().0.len());
+
+        let time_per_sample = 1.0 / samp_rate;
+
+        let (data, l_step, f_step) = self
+            .track
+            .file_data_left()
+            .get_presampled_data_and_step(rough_end - rough_start);
+
+        let line_data: Vec<egui_plot::Line<'_>> = match data.len() {
+            1 => {
+                // This hapens if we expect to just draw the line
+                let coords_left: Vec<_> = data[0][rough_start / l_step..rough_end / l_step]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(x, y)| {
+                        let x64 = ((x * l_step) as f64 * time_per_sample)
+                            + (rough_start as f64 * time_per_sample);
+                        range.contains(&x64).then(|| [x64, *y as f64 / 2.0 + 0.5])
+                        // + 1.0 for being the second track
+                    })
+                    .collect();
+
+                let frac = f_step / FILLED_LIMIT as f32;
+
+                // Plot things
+                vec![
+                    egui_plot::Line::new("left", coords_left)
+                        .fill(0.5)
+                        .color(egui::Color32::PURPLE)
+                        .fill_alpha(0.3 * (1.0 - frac) + 1.0 * (frac)),
+                ]
+            }
+            2 => {
+                // We run this if we want to draw both the max and the min funcs
+
+                let raw_coords_max = data[1][rough_start / l_step..rough_end / l_step]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(x, y)| {
+                        let x64 = ((x * l_step) as f64 * time_per_sample)
+                            + (rough_start as f64 * time_per_sample);
+                        range.contains(&x64).then(|| [x64, *y as f64]) // + 1.0 for being the second track
+                    });
+
+                let raw_coords_min = data[0][rough_start / l_step..rough_end / l_step]
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(x, y)| {
+                        let x64 = ((x * l_step) as f64 * time_per_sample)
+                            + (rough_start as f64 * time_per_sample);
+                        range.contains(&x64).then(|| [x64, *y as f64]) // + 1.0 for being the second track
+                    });
+
+                let coords_max: Vec<_> = raw_coords_max.map(|[x, y]| [x, y / 2.0 + 0.5]).collect();
+
+                let coords_min: Vec<_> = raw_coords_min.map(|[x, y]| [x, y / 2.0 + 0.5]).collect();
+
+                //println!("{:?},\n\n\n{:?}", coords_max, coords_min);
+
+                // Get top and bottom lines
+                let up = egui_plot::Line::new("left", coords_max)
+                    .fill(0.5)
+                    .color(egui::Color32::PURPLE)
+                    .fill_alpha(1.0);
+
+                let down = egui_plot::Line::new("left", coords_min)
+                    .fill(0.5)
+                    .color(egui::Color32::PURPLE)
+                    .fill_alpha(1.0);
+
+                vec![up, down]
+            }
+            _ => {
+                eprintln!("we have more than two or zero of line/min/max samples");
+                vec![]
+            }
+        };
+
+        line_data
+    }
 }
 
 fn get_extreme(chunk: &[f32]) -> f32 {
@@ -196,37 +292,36 @@ impl Widget for WaveformWidget<'_> {
     fn ui(mut self, ui: &mut egui::Ui) -> egui::Response {
         let plot_id = ui.id();
 
+        let samp_rate = self.track.file_codec_parameters().sample_rate.unwrap() as f64;
+        let sample_count = self.track.file_codec_parameters().n_frames.unwrap() as f64;
+
         // Initialise data eg getting start stop times and step size
         let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), plot_id) {
-            plot_memory.bounds().range_x()
+            let r = plot_memory.bounds().range_x();
+            let three_samples = 3.0 / samp_rate;
+            (r.start() - three_samples).clamp(0.0, sample_count)
+                ..=(r.end() + three_samples).clamp(0.0, sample_count)
         } else {
-            0.02..=1000.0
+            0.02f64..=1000.0f64
         };
 
         let time_span = range.end() - range.start();
-        let samp_rate = self.track.file_codec_parameters().sample_rate.unwrap() as f64;
         let total_samples_spanned = time_span * samp_rate;
         let step = (total_samples_spanned / 500.0) as usize + 1;
         let time_per_step = step as f64 / samp_rate;
         let time_per_sample = 1.0 / samp_rate;
 
+        // Do Left
+
+        let line_left = self.compute_line_data(range.clone(), samp_rate);
+
         // Sample over an appropriate data range to get coords for
+
         let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
         let rough_end =
-            ((range.end() * samp_rate) as usize + 1).min(self.track.file_data().0.len());
+            ((range.end() * samp_rate) as usize + 1).min(self.track.sample_data().0.len());
 
-        let coords_left: Vec<_> = self.track.file_data().0[rough_start..rough_end]
-            .chunks(step)
-            .enumerate()
-            .filter_map(|(x, chunk)| {
-                let x64 = (x as f64 * time_per_step) + (rough_start as f64 * time_per_sample);
-                range
-                    .contains(&x64)
-                    .then(|| [x64, get_extreme(chunk) as f64 / 2.0 + 0.5])
-            })
-            .collect();
-
-        let coords_right: Vec<_> = self.track.file_data().1[rough_start..rough_end]
+        let coords_right: Vec<_> = self.track.sample_data().1[rough_start..rough_end]
             .chunks(step)
             .enumerate()
             .filter_map(|(x, chunk)| {
@@ -236,12 +331,6 @@ impl Widget for WaveformWidget<'_> {
                     .then(|| [x64, get_extreme(chunk) as f64 / 2.0 - 0.5]) // + 1.0 for being the second track
             })
             .collect();
-
-        // Plot things
-        let line_left = egui_plot::Line::new("left", coords_left)
-            .fill(0.5)
-            .color(egui::Color32::PURPLE)
-            .fill_alpha(0.4);
 
         let line_right = egui_plot::Line::new("right", coords_right)
             .fill(-0.5)
@@ -269,7 +358,9 @@ impl Widget for WaveformWidget<'_> {
             .height(300.0)
             .default_y_bounds(-1.0, 1.0)
             .show(ui, |plot_ui| {
-                plot_ui.line(line_left);
+                for l in line_left {
+                    plot_ui.line(l);
+                }
                 plot_ui.line(line_right);
                 plot_ui.line(line_time);
                 plot_ui.pointer_coordinate()
@@ -282,7 +373,6 @@ impl Widget for WaveformWidget<'_> {
                 );
 
                 let x_sample = (x_time * samp_rate) as usize;
-                println!("{x_time}");
                 self.tx_commands
                     .send(AudioCommand::RelocateTo(self.track.clone(), x_sample))
                     .expect("Can't reset time");
@@ -290,6 +380,147 @@ impl Widget for WaveformWidget<'_> {
                 self.current_sample = x_sample;
             }
         }
+
+        plt.response
+    }
+}
+
+pub struct EQWidget<'a> {
+    track: &'a Arc<Track>,
+    data_width: usize,
+    current_sample: usize,
+    _vertical: bool,
+    allow_zoom: egui::Vec2b,
+    allow_drag: egui::Vec2b,
+    allow_scroll: egui::Vec2b,
+}
+
+impl<'a> EQWidget<'a> {
+    pub fn new(track: &'a Arc<Track>, sample_count: usize, current_sample: usize) -> Self {
+        Self {
+            track,
+            data_width: sample_count,
+            current_sample,
+            _vertical: true,
+            allow_zoom: [true, false].into(),
+            allow_drag: [true, false].into(),
+            allow_scroll: [true, false].into(),
+        }
+    }
+}
+
+impl Widget for EQWidget<'_> {
+    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        // Get the frequency data from the sample data, and have it centred on the current sample
+        // If the data does not fully cover then assume it is zero.
+
+        let sample_rate = self.track.file_codec_parameters().sample_rate.unwrap();
+        let current_range = (self.current_sample as i32 - self.data_width as i32 / 2)
+            ..(self.current_sample as i32 + self.data_width as i32 / 2);
+
+        let track_len = self.track.file_codec_parameters().n_frames.unwrap() as i32;
+        let mut useful_sample_buffer;
+
+        let useful_samples = if current_range.start < 0 || current_range.end >= track_len {
+            useful_sample_buffer = vec![0.0; self.data_width];
+
+            let start_in_track = current_range.start.max(0) as usize;
+            let mut start_in_useful = 0;
+            if current_range.start < 0 {
+                start_in_useful = -current_range.start as usize;
+            }
+
+            let end_in_track = current_range.end.min(track_len) as usize;
+            let mut end_in_useful = self.data_width;
+            if current_range.end >= track_len {
+                end_in_useful = self.data_width - (current_range.end - track_len) as usize;
+            }
+
+            useful_sample_buffer[start_in_useful..end_in_useful]
+                .copy_from_slice(&self.track.sample_data().0[start_in_track..end_in_track]);
+
+            &useful_sample_buffer[..]
+        } else {
+            &self.track.sample_data().0[current_range.start as usize..current_range.end as usize]
+        };
+
+        let freq_data = common::fft(useful_samples);
+        //println!("{:?}", freq_data);
+
+        // println!(
+        //     "{}, {}",
+        //     useful_samples.into_iter().sum::<f32>(),
+        //     (useful_samples.into_iter().sum::<f32>() / self.data_width as f32).log2() + 6.0
+        // );
+
+        let coords: Vec<_> = freq_data[0..(self.data_width as usize / 2)]
+            .iter()
+            .enumerate()
+            .map(|(i, &f)| [(i as f64).log2(), ((f as f64) / 5.0).log2() + 6.0])
+            .collect();
+
+        let freq_line = egui_plot::Line::new("frequency", coords)
+            .fill(-18.0)
+            .color(egui::Color32::GREEN)
+            .fill_alpha(0.4);
+
+        let max_x = (self.data_width as f64).log2() - 1.0;
+        let min_x = max_x * 0.29;
+
+        // Recall that the maximum frequency shown is sample rate / 2 so we can draw grid lines now
+
+        let plt = egui_plot::Plot::new("fourier_transform")
+            .legend(egui_plot::Legend::default())
+            .clamp_grid(false)
+            .show_grid(true)
+            .x_grid_spacer(|_input| {
+                //
+                let x_coords: Vec<GridMark> = [
+                    20.0, 30.0, 100.0, 200.0, 300.0, 1000.0, 2000.0, 3000.0, 10000.0, 20000.0,
+                ]
+                .map(|f: f64| (f.log2() * max_x) / ((sample_rate as f64).log2() - 1.0))
+                .map(|v| GridMark {
+                    value: v,
+                    step_size: 100.0,
+                })
+                .to_vec();
+
+                x_coords
+            })
+            .y_grid_spacer(|_input| {
+                let y_coords: Vec<GridMark> = [12.0, 3.0, 0.0, -3.0, -12.0]
+                    .map(|v| GridMark {
+                        value: v,
+                        step_size: 100.0,
+                    })
+                    .to_vec();
+
+                y_coords
+            })
+            .x_axis_formatter(|a, _range| {
+                let str = format!("{:.0}", (sample_rate as f64 / 2.0).powf(a.value / max_x));
+                match str.as_str() {
+                    "10000" => "10k".to_string(),
+                    "20000" => "20k".to_string(),
+                    _ => str,
+                }
+            })
+            .center_y_axis(true)
+            .height(300.0)
+            .allow_zoom(self.allow_zoom)
+            .allow_drag(self.allow_drag)
+            .allow_scroll(self.allow_scroll)
+            .label_formatter(|_name, value| {
+                let freq_pos = (sample_rate as f64 / 2.0).powf(value.x as f64 / max_x);
+                format!("frequency: {:.2} \nvolume: {:.2}", freq_pos, value.y)
+            })
+            .center_y_axis(true)
+            .default_x_bounds(min_x, max_x)
+            .default_y_bounds(-18.0, 18.0)
+            .show(ui, |plot_ui| {
+                plot_ui.line(freq_line);
+                plot_ui.pointer_coordinate();
+            });
 
         plt.response
     }

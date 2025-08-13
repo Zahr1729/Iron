@@ -83,7 +83,6 @@ impl eframe::App for MyEguiApp {
             while let Ok(update) = self.audio_thread.updates.try_recv() {
                 match update {
                     AudioUpdate::CurrentSample(s) => {
-                        println!("{s}");
                         self.current_sample = s;
                     }
                 }
@@ -91,6 +90,8 @@ impl eframe::App for MyEguiApp {
 
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx_loader.try_recv() {
+                // Go to the beginning to ensure no nasty crashes.
+                self.current_sample = 0;
                 self.active_track = Some(Arc::new(rx));
             }
 
@@ -101,6 +102,9 @@ impl eframe::App for MyEguiApp {
                     self.audio_thread.commands.clone(),
                 );
                 ui.add(waveform_widget);
+
+                let eq_widget = ui::EQWidget::new(t, 1024, self.current_sample);
+                ui.add(eq_widget);
 
                 // Perhaps group this all inside playpausebutton
                 let play_pause_button = ui::PlayPauseButton::new(self.is_paused);
