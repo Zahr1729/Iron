@@ -1,6 +1,5 @@
 use eframe::egui::{self, Response, Widget};
 use egui_plot::GridMark;
-use rand::fill;
 use symphonia::core::errors::Error;
 
 use std::{
@@ -8,7 +7,7 @@ use std::{
     ops::RangeInclusive,
     sync::{
         Arc,
-        mpsc::{self, Sender, channel},
+        mpsc::{self, Sender},
     },
     thread::JoinHandle,
 };
@@ -190,10 +189,16 @@ impl<'a> WaveformWidget<'a> {
 
         let time_per_sample = 1.0 / samp_rate;
 
-        let (data, l_step, f_step) = self
-            .track
-            .file_data_left()
-            .get_presampled_data_and_step(rough_end - rough_start);
+        let (data, l_step, f_step) = match channel {
+            Channel::Left => self
+                .track
+                .file_data_left()
+                .get_presampled_data_and_step(rough_end - rough_start),
+            Channel::Right => self
+                .track
+                .file_data_right()
+                .get_presampled_data_and_step(rough_end - rough_start),
+        };
 
         let offset_func = match channel {
             Channel::Left => |f: f64| f / 2.0 + 0.5,
@@ -204,6 +209,9 @@ impl<'a> WaveformWidget<'a> {
             Channel::Left => || 0.5,
             Channel::Right => || -0.5,
         };
+
+        let max_alpha = 0.8;
+        let min_alpha = 0.3;
 
         let line_data: Vec<egui_plot::Line<'_>> = match data.len() {
             1 => {
@@ -219,14 +227,14 @@ impl<'a> WaveformWidget<'a> {
                     })
                     .collect();
 
-                let frac = f_step / FILLED_LIMIT as f32;
+                let frac = 2.0f32.powf(f_step) / FILLED_LIMIT as f32;
 
                 // Plot things
                 vec![
                     egui_plot::Line::new("left", coords_left)
                         .fill(fill_func())
                         .color(egui::Color32::PURPLE)
-                        .fill_alpha(0.3 * (1.0 - frac) + 1.0 * (frac)),
+                        .fill_alpha(min_alpha * (1.0 - frac) + max_alpha * (frac)),
                 ]
             }
             2 => {
@@ -260,12 +268,12 @@ impl<'a> WaveformWidget<'a> {
                 let up = egui_plot::Line::new("left", coords_max)
                     .fill(fill_func())
                     .color(egui::Color32::PURPLE)
-                    .fill_alpha(1.0);
+                    .fill_alpha(max_alpha);
 
                 let down = egui_plot::Line::new("left", coords_min)
                     .fill(fill_func())
                     .color(egui::Color32::PURPLE)
-                    .fill_alpha(1.0);
+                    .fill_alpha(max_alpha);
 
                 vec![up, down]
             }
@@ -279,33 +287,12 @@ impl<'a> WaveformWidget<'a> {
     }
 }
 
-fn get_extreme(chunk: &[f32]) -> f32 {
-    let mut maxvalue = 0.0f32;
-
-    if chunk.len() < 8 {
-        for &d in chunk {
-            if d.abs() > maxvalue.abs() {
-                maxvalue = d;
-            }
-        }
-    } else {
-        for o in [0.1, 0.3, 0.5, 0.7, 0.9] {
-            let i = (o * chunk.len() as f32) as usize;
-
-            if chunk[i].abs() > maxvalue.abs() {
-                maxvalue = chunk[i];
-            }
-        }
-    }
-
-    maxvalue
-}
-
 impl Widget for WaveformWidget<'_> {
     fn ui(mut self, ui: &mut egui::Ui) -> egui::Response {
         let plot_id = ui.id();
 
         let samp_rate = self.track.file_codec_parameters().sample_rate.unwrap() as f64;
+        let time_per_sample = 1.0 / samp_rate;
         let sample_count = self.track.file_codec_parameters().n_frames.unwrap() as f64;
 
         // Initialise data eg getting start stop times and step size
@@ -317,12 +304,6 @@ impl Widget for WaveformWidget<'_> {
         } else {
             0.02f64..=1000.0f64
         };
-
-        let time_span = range.end() - range.start();
-        let total_samples_spanned = time_span * samp_rate;
-        let step = (total_samples_spanned / 500.0) as usize + 1;
-        let time_per_step = step as f64 / samp_rate;
-        let time_per_sample = 1.0 / samp_rate;
 
         // Do Left
 
