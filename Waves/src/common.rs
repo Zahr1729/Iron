@@ -8,6 +8,11 @@ use num_complex::{Complex, ComplexFloat};
 use std::fmt::Debug;
 use symphonia::core::codecs::CodecParameters;
 
+pub enum Channel {
+    Left,
+    Right,
+}
+
 #[derive(Default, Clone)]
 pub struct MipMapChannel {
     pyramid_data: Vec<Vec<f32>>,
@@ -146,7 +151,7 @@ impl Track {
         &self.file_data_left
     }
 
-    pub fn _file_data_right(&self) -> &MipMapChannel {
+    pub fn file_data_right(&self) -> &MipMapChannel {
         &self.file_data_right
     }
 }

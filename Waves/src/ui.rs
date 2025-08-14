@@ -1,5 +1,6 @@
 use eframe::egui::{self, Response, Widget};
 use egui_plot::GridMark;
+use rand::fill;
 use symphonia::core::errors::Error;
 
 use std::{
@@ -7,14 +8,14 @@ use std::{
     ops::RangeInclusive,
     sync::{
         Arc,
-        mpsc::{self, Sender},
+        mpsc::{self, Sender, channel},
     },
     thread::JoinHandle,
 };
 
 use crate::{
     audio::AudioCommand,
-    common::{self, Track},
+    common::{self, Channel, Track},
 };
 
 pub struct PlayPauseButton {
@@ -178,10 +179,12 @@ impl<'a> WaveformWidget<'a> {
         &self,
         range: RangeInclusive<f64>,
         samp_rate: f64,
+        channel: Channel,
     ) -> Vec<egui_plot::Line<'_>> {
         const FILLED_LIMIT: usize = 32;
 
-        let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
+        let rough_start =
+            ((range.start() * samp_rate) as usize).min(self.track.sample_data().0.len() - 1);
         let rough_end =
             ((range.end() * samp_rate) as usize + 1).min(self.track.sample_data().0.len());
 
@@ -192,6 +195,16 @@ impl<'a> WaveformWidget<'a> {
             .file_data_left()
             .get_presampled_data_and_step(rough_end - rough_start);
 
+        let offset_func = match channel {
+            Channel::Left => |f: f64| f / 2.0 + 0.5,
+            Channel::Right => |f: f64| f / 2.0 - 0.5,
+        };
+
+        let fill_func = match channel {
+            Channel::Left => || 0.5,
+            Channel::Right => || -0.5,
+        };
+
         let line_data: Vec<egui_plot::Line<'_>> = match data.len() {
             1 => {
                 // This hapens if we expect to just draw the line
@@ -201,7 +214,7 @@ impl<'a> WaveformWidget<'a> {
                     .filter_map(|(x, y)| {
                         let x64 = ((x * l_step) as f64 * time_per_sample)
                             + (rough_start as f64 * time_per_sample);
-                        range.contains(&x64).then(|| [x64, *y as f64 / 2.0 + 0.5])
+                        range.contains(&x64).then(|| [x64, offset_func(*y as f64)])
                         // + 1.0 for being the second track
                     })
                     .collect();
@@ -211,7 +224,7 @@ impl<'a> WaveformWidget<'a> {
                 // Plot things
                 vec![
                     egui_plot::Line::new("left", coords_left)
-                        .fill(0.5)
+                        .fill(fill_func())
                         .color(egui::Color32::PURPLE)
                         .fill_alpha(0.3 * (1.0 - frac) + 1.0 * (frac)),
                 ]
@@ -237,20 +250,20 @@ impl<'a> WaveformWidget<'a> {
                         range.contains(&x64).then(|| [x64, *y as f64]) // + 1.0 for being the second track
                     });
 
-                let coords_max: Vec<_> = raw_coords_max.map(|[x, y]| [x, y / 2.0 + 0.5]).collect();
+                let coords_max: Vec<_> = raw_coords_max.map(|[x, y]| [x, offset_func(y)]).collect();
 
-                let coords_min: Vec<_> = raw_coords_min.map(|[x, y]| [x, y / 2.0 + 0.5]).collect();
+                let coords_min: Vec<_> = raw_coords_min.map(|[x, y]| [x, offset_func(y)]).collect();
 
                 //println!("{:?},\n\n\n{:?}", coords_max, coords_min);
 
                 // Get top and bottom lines
                 let up = egui_plot::Line::new("left", coords_max)
-                    .fill(0.5)
+                    .fill(fill_func())
                     .color(egui::Color32::PURPLE)
                     .fill_alpha(1.0);
 
                 let down = egui_plot::Line::new("left", coords_min)
-                    .fill(0.5)
+                    .fill(fill_func())
                     .color(egui::Color32::PURPLE)
                     .fill_alpha(1.0);
 
@@ -313,29 +326,8 @@ impl Widget for WaveformWidget<'_> {
 
         // Do Left
 
-        let line_left = self.compute_line_data(range.clone(), samp_rate);
-
-        // Sample over an appropriate data range to get coords for
-
-        let rough_start = ((range.start() * samp_rate) as usize).saturating_sub(1);
-        let rough_end =
-            ((range.end() * samp_rate) as usize + 1).min(self.track.sample_data().0.len());
-
-        let coords_right: Vec<_> = self.track.sample_data().1[rough_start..rough_end]
-            .chunks(step)
-            .enumerate()
-            .filter_map(|(x, chunk)| {
-                let x64 = (x as f64 * time_per_step) + (rough_start as f64 * time_per_sample);
-                range
-                    .contains(&x64)
-                    .then(|| [x64, get_extreme(chunk) as f64 / 2.0 - 0.5]) // + 1.0 for being the second track
-            })
-            .collect();
-
-        let line_right = egui_plot::Line::new("right", coords_right)
-            .fill(-0.5)
-            .color(egui::Color32::BLUE)
-            .fill_alpha(0.4);
+        let line_left = self.compute_line_data(range.clone(), samp_rate, Channel::Left);
+        let line_right = self.compute_line_data(range.clone(), samp_rate, Channel::Right);
 
         // Draw the timestamp line
         let line_time = egui_plot::Line::new(
@@ -361,7 +353,9 @@ impl Widget for WaveformWidget<'_> {
                 for l in line_left {
                     plot_ui.line(l);
                 }
-                plot_ui.line(line_right);
+                for l in line_right {
+                    plot_ui.line(l);
+                }
                 plot_ui.line(line_time);
                 plot_ui.pointer_coordinate()
             });
