@@ -10,7 +10,7 @@ use symphonia::core::{
     probe::Hint,
 };
 
-use crate::common::{MipMapChannel, Track};
+use crate::common::{mipmapchannel::MipMapChannel, track::Track};
 
 impl Track {
     pub fn get_data_from_mp3_path(

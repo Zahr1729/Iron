@@ -8,13 +8,13 @@ use std::{
 
 mod audio;
 mod common;
+mod effects;
 mod loader;
 mod ui;
 
-use common::Track;
-
 use crate::{
     audio::{AudioThread, AudioUpdate},
+    common::track::Track,
     ui::{ProgressTracker, ThreadTracker},
 };
 

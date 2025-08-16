@@ -14,7 +14,7 @@ use std::{
 
 use crate::{
     audio::AudioCommand,
-    common::{self, Channel, Track},
+    common::{self, Channel, track::Track},
 };
 
 pub struct PlayPauseButton {
@@ -291,16 +291,16 @@ impl Widget for WaveformWidget<'_> {
     fn ui(mut self, ui: &mut egui::Ui) -> egui::Response {
         let plot_id = ui.id();
 
-        let samp_rate = self.track.file_codec_parameters().sample_rate.unwrap() as f64;
+        let samp_rate = self.track.sample_rate() as f64;
         let time_per_sample = 1.0 / samp_rate;
-        let sample_count = self.track.file_codec_parameters().n_frames.unwrap() as f64;
+        let track_len = self.track.length() as f64;
 
         // Initialise data eg getting start stop times and step size
         let range = if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), plot_id) {
             let r = plot_memory.bounds().range_x();
             let three_samples = 3.0 / samp_rate;
-            (r.start() - three_samples).clamp(0.0, sample_count)
-                ..=(r.end() + three_samples).clamp(0.0, sample_count)
+            (r.start() - three_samples).clamp(0.0, track_len)
+                ..=(r.end() + three_samples).clamp(0.0, track_len)
         } else {
             0.02f64..=1000.0f64
         };
@@ -343,9 +343,7 @@ impl Widget for WaveformWidget<'_> {
 
         if plt.response.clicked() {
             if let Some(coord) = plt.inner {
-                let x_time = coord.x.max(0.0).min(
-                    self.track.file_codec_parameters().n_frames.unwrap() as f64 * time_per_sample,
-                );
+                let x_time = coord.x.max(0.0).min(track_len * time_per_sample);
 
                 let x_sample = (x_time * samp_rate) as usize;
                 self.tx_commands
@@ -389,11 +387,11 @@ impl Widget for EQWidget<'_> {
         // Get the frequency data from the sample data, and have it centred on the current sample
         // If the data does not fully cover then assume it is zero.
 
-        let sample_rate = self.track.file_codec_parameters().sample_rate.unwrap();
+        let sample_rate = self.track.sample_rate();
         let current_range = (self.current_sample as i32 - self.data_width as i32 / 2)
             ..(self.current_sample as i32 + self.data_width as i32 / 2);
 
-        let track_len = self.track.file_codec_parameters().n_frames.unwrap() as i32;
+        let track_len = self.track.length() as i32;
         let mut useful_sample_buffer;
 
         let useful_samples = if current_range.start < 0 || current_range.end >= track_len {

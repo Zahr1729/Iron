@@ -1,4 +1,6 @@
-use crate::common::Track;
+use crate::common::dB;
+use crate::effects::Gain;
+use crate::{common::track::Track, effects::Effect};
 
 use std::{
     sync::{Arc, mpsc},
@@ -39,54 +41,23 @@ fn get_stream_from_sample(
     tx: mpsc::Sender<AudioUpdate>,
 ) -> Stream {
     let config = output_device.default_output_config().unwrap().config();
-    let buffer_size = track.sample_data().0.len();
     let channels = config.channels as usize;
-    let mut sample_clock: usize = start_point;
-
-    // We cloning self because this function needs to access (but might outlive the thread (but it won't))
-    let s = track.clone();
-    let mut next_value = move || {
-        if sample_clock + 1 >= buffer_size {
-            // if we've gone over the limit of the sample just play nothing
-            (0.0, 0.0, buffer_size)
-        } else {
-            sample_clock = sample_clock + 1;
-            (
-                s.sample_data().0[sample_clock],
-                s.sample_data().1[sample_clock],
-                sample_clock,
-            )
-        }
-    };
 
     let err_fn = |err| println!("an error occurred on stream: {err}");
 
-    fn write_data(
-        output: &mut [f32],
-        channels: usize,
-        // this is the function saying what the next left right data should be
-        next_frame: &mut dyn FnMut() -> (f32, f32, usize),
-        tx: &mpsc::Sender<AudioUpdate>,
-    ) {
-        let mut latest_sample = 0;
+    let mut sample_clock = start_point;
 
-        // frame is the instance in time
-        for frame in output.chunks_mut(channels) {
-            let (left, right, current_sample) = next_frame();
-            frame[0] = left;
-            frame[1] = right;
-            latest_sample = current_sample;
-        }
-
-        tx.send(AudioUpdate::CurrentSample(latest_sample))
-            .expect("Channel Closed");
-    }
+    let gain = Gain::new(dB(0.03), track);
 
     let stream = output_device
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                write_data(data, channels, &mut next_value, &tx)
+                gain.apply(data, sample_clock, channels);
+                sample_clock += data.len() / channels;
+                tx.send(AudioUpdate::CurrentSample(sample_clock))
+                    .expect("Channel Closed");
+                //write_data(data, channels, &mut next_value, &tx)
             },
             err_fn,
             None,
@@ -105,6 +76,15 @@ impl AudioThread {
             let host: cpal::Host = cpal::default_host();
 
             let output_device = host.default_output_device().unwrap();
+
+            println!(
+                "{:?}",
+                output_device
+                    .supported_output_configs()
+                    .unwrap()
+                    .collect::<Vec<_>>()
+            );
+
             let mut current_stream: Option<cpal::Stream> = None;
 
             loop {
