@@ -46,3 +46,13 @@ impl Effect for Gain {
         }
     }
 }
+
+pub struct Zero;
+
+impl Effect for Zero {
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+        for j in output {
+            *j = 0.0;
+        }
+    }
+}

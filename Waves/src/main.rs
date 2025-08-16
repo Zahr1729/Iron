@@ -8,21 +8,24 @@ use std::{
 
 mod audio;
 mod common;
-mod effects;
 mod loader;
+mod player;
+mod scene;
 mod ui;
 
 use crate::{
-    audio::{AudioThread, AudioUpdate},
+    audio::dag::EffectDAG,
     common::track::Track,
+    player::{AudioThread, AudioUpdate},
     ui::{ProgressTracker, ThreadTracker},
 };
 
 struct MyEguiApp {
+    effect_dag: Arc<EffectDAG>,
     active_track: Option<Arc<Track>>,
     tx_loader: mpsc::Sender<Track>,
     rx_loader: mpsc::Receiver<Track>,
-    audio_thread: audio::AudioThread,
+    audio_thread: player::AudioThread,
     current_sample: usize,
     is_paused: bool,
     // Must store
@@ -43,6 +46,7 @@ impl MyEguiApp {
         let (tx, rx) = mpsc::channel();
 
         Self {
+            effect_dag: Arc::new(EffectDAG::new()),
             tx_loader: tx,
             rx_loader: rx,
             active_track: Default::default(),
@@ -113,11 +117,11 @@ impl eframe::App for MyEguiApp {
                     match self.is_paused {
                         true => self
                             .audio_thread
-                            .send_command(audio::AudioCommand::PlayFrom(
+                            .send_command(player::AudioCommand::PlayFrom(
                                 t.clone(),
                                 self.current_sample,
                             )),
-                        false => self.audio_thread.send_command(audio::AudioCommand::Stop),
+                        false => self.audio_thread.send_command(player::AudioCommand::Stop),
                     }
                     self.is_paused = !self.is_paused;
                 }

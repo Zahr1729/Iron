@@ -13,8 +13,8 @@ use std::{
 };
 
 use crate::{
-    audio::AudioCommand,
     common::{self, Channel, track::Track},
+    player::AudioCommand,
 };
 
 pub struct PlayPauseButton {
