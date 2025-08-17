@@ -1,26 +1,59 @@
 use std::{path::PathBuf, sync::Arc};
 
-use eframe::egui::TextBuffer;
-use ron::from_str;
-use symphonia::core::formats::Track;
-
-use crate::audio::{dag::EffectDAG, effects::Effect};
+use crate::audio::effects::{self, Effect, Gain};
+use crate::audio::{dag::EffectDAG, effects::Zero};
+use crate::common::track::Track;
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize, Serialize, PartialEq)]
-struct SceneTrack {
-    file_name: PathBuf,
+#[derive(Debug, Deserialize, Serialize, PartialEq, Clone)]
+pub enum NodeType {
+    // Output is what everything feeds into it WILL be at index zero.
+    Zero,
+    Track {
+        file_path: PathBuf,
+        // start : usize,
+    },
+    Gain {
+        #[allow(non_snake_case)]
+        dB: f32,
+        input: usize, // The index of our element
+    },
 }
 
 #[derive(Debug, Deserialize, Serialize, PartialEq)]
 pub struct Scene {
-    tracks: Vec<SceneTrack>,
+    start_index: Option<usize>,
+    nodes: Vec<NodeType>,
 }
 
 impl Scene {
+    fn expand_dag(&self, index: usize, dag: &mut EffectDAG) -> Arc<dyn Effect> {
+        match &self.nodes[index] {
+            NodeType::Zero => dag.add_effect(Zero),
+            NodeType::Gain { dB, input } => {
+                let input = self.expand_dag(*input, dag);
+                dag.add_effect(Gain::new(crate::common::dB(*dB), input))
+            }
+            NodeType::Track { file_path } => {
+                dag.add_effect(Track::get_data_from_mp3_path(file_path.clone(), None).unwrap())
+            }
+        }
+    }
+
     pub fn generate_effect_dag(&self) -> EffectDAG {
-        todo!()
+        match self.start_index {
+            None => {
+                println!("there is no start index");
+                EffectDAG::new(0, vec![Arc::new(Zero)])
+            }
+            Some(i) => {
+                let mut dag = EffectDAG::new(i, vec![]);
+                self.expand_dag(i, &mut dag);
+
+                dag
+            }
+        }
     }
 
     pub fn from_effect_dag() -> Self {
@@ -28,34 +61,39 @@ impl Scene {
     }
 
     pub fn from_track(path: PathBuf) -> Self {
-        let s = format!("Scene(tracks: [SceneTrack (file_name: {:?} )])", path);
-        let scene: Scene = ron::from_str(s.as_str()).unwrap();
-
-        scene
+        Self {
+            start_index: Some(0),
+            nodes: vec![NodeType::Track { file_path: path }],
+        }
     }
 }
 
 #[cfg(test)]
 mod test {
-    use std::{fs::File, io::Read, path::PathBuf, str::FromStr};
+    use std::{any::Any, fs::File, path::PathBuf};
 
-    use crate::scene::Scene;
+    use eframe::epaint::tessellator::Path;
+
+    use super::*;
 
     #[test]
     fn test_use_file_name() {
         let path = r"..\mp3s\C_major";
         let scene = Scene::from_track(PathBuf::from(path));
 
-        assert!(
-            path == scene.tracks[0].file_name.to_str().unwrap(),
-            "File name data not recovered"
-        );
+        match scene.nodes[0].clone() {
+            NodeType::Track { file_path: p } => {
+                //println!("{:?}, {path}", p);
+                assert!(p.to_str().unwrap() == path, "Path not saved appropriately")
+            }
+            _ => assert!(false, "Entry at index 1 is not a track"),
+        }
     }
 
     #[test]
     fn test_create_file() {
-        let scene_path = r"example_file.ron";
-        let file_path = r"..\mp3s\C_major";
+        let scene_path = r"scene\example_file.ron";
+        let file_path = r"mp3s\C_major.mp3";
 
         let s = Scene::from_track(PathBuf::from(file_path));
 
@@ -72,15 +110,16 @@ mod test {
 
     #[test]
     fn test_read_file_name() {
-        let scene_path = r"./example_file.ron";
+        let scene_path = r"scene\example_file.ron";
 
-        let strng = r#"(
-                tracks: [
-                    (
-                        file_name: "..\\mp3s\\C_major",
-                    ),
-                ],
-            )"#;
+        let string = r#"(
+    start_index: Some(0),
+    nodes: [
+        Track(
+            file_path: "\\mp3s\\C_major.mp3",
+        ),
+    ],
+)"#;
 
         let f = File::open(scene_path).expect("could not open file");
 
@@ -88,7 +127,7 @@ mod test {
             .from_reader::<File, Scene>(f)
             .unwrap();
 
-        let s2: Scene = ron::from_str(&strng).unwrap();
+        let s2: Scene = ron::from_str(&string).unwrap();
         assert!(s1 == s2, "read data does not agree with what should exist");
 
         // match f.read_to_string(&mut strng) {
@@ -97,5 +136,37 @@ mod test {
         //     }
         //     Err(_) => assert!(false, "data not extracted"),
         // };
+    }
+
+    #[test]
+    fn test_generate_dag() {
+        let db = 2.0;
+        let file_path = PathBuf::from(r"mp3s\C_major.mp3");
+
+        let scene = Scene {
+            start_index: Some(0),
+            nodes: vec![
+                NodeType::Gain { dB: db, input: 1 },
+                NodeType::Track {
+                    file_path: file_path.clone(),
+                },
+            ],
+        };
+
+        let dag = scene.generate_effect_dag();
+
+        // we being a bit silly
+        assert_eq!(dag.root_index(), 0);
+        let node_zero = &*dag.nodes()[1] as &dyn Any;
+        assert_eq!(node_zero.downcast_ref::<Gain>().unwrap().gain().0, db);
+        let node_one = &*dag.nodes()[0] as &dyn Any;
+        assert_eq!(
+            node_one
+                .downcast_ref::<Track>()
+                .unwrap()
+                ._file_path()
+                .unwrap(),
+            file_path
+        );
     }
 }

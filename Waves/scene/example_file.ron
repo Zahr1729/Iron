@@ -1,7 +1,8 @@
 (
-    tracks: [
-        (
-            file_name: "..\\mp3s\\C_major",
+    start_index: Some(0),
+    nodes: [
+        Track(
+            file_path: "mp3s\\C_major.mp3",
         ),
     ],
 )

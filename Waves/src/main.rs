@@ -14,7 +14,7 @@ mod scene;
 mod ui;
 
 use crate::{
-    audio::dag::EffectDAG,
+    audio::{dag::EffectDAG, effects::Zero},
     common::track::Track,
     player::{AudioThread, AudioUpdate},
     ui::{ProgressTracker, ThreadTracker},
@@ -46,7 +46,7 @@ impl MyEguiApp {
         let (tx, rx) = mpsc::channel();
 
         Self {
-            effect_dag: Arc::new(EffectDAG::new()),
+            effect_dag: Arc::new(EffectDAG::new(0, vec![Arc::new(Zero)])),
             tx_loader: tx,
             rx_loader: rx,
             active_track: Default::default(),
@@ -142,7 +142,8 @@ impl eframe::App for MyEguiApp {
 
                     // thread to do the loading file yippee!
                     let handle = thread::spawn(move || -> Result<(), Error> {
-                        let track = Track::get_data_from_mp3_path(file_path.clone(), prog_sender)?;
+                        let track =
+                            Track::get_data_from_mp3_path(file_path.clone(), Some(prog_sender))?;
                         tx.send(track).unwrap();
                         Ok(())
                     });

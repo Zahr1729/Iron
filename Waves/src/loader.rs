@@ -15,7 +15,7 @@ use crate::common::{mipmapchannel::MipMapChannel, track::Track};
 impl Track {
     pub fn get_data_from_mp3_path(
         file_path: PathBuf,
-        update_progress: mpsc::Sender<f32>,
+        update_progress: Option<mpsc::Sender<f32>>,
     ) -> Result<Self, Error> {
         // Open the media source.
         let src = std::fs::File::open(&file_path).expect("failed to open media");
@@ -109,7 +109,9 @@ impl Track {
                             file_data_right.extend_from_slice(buf.chan(0));
                             prog += buf.chan(0).len() as f32 / total;
 
-                            update_progress.send(prog).unwrap();
+                            if let Some(ref tx) = update_progress {
+                                tx.send(prog).unwrap()
+                            }
                         }
                         _ => {
                             // Repeat for the different sample formats.

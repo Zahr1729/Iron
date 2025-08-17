@@ -1,8 +1,10 @@
+use std::any::Any;
 use std::sync::Arc;
 
 use crate::common::{dB, track::Track};
+use crate::scene::NodeType;
 
-pub trait Effect: Send + Sync {
+pub trait Effect: Send + Sync + Any {
     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize);
 }
 
@@ -35,6 +37,10 @@ pub struct Gain {
 impl Gain {
     pub fn new(gain: dB, input: Arc<dyn Effect>) -> Self {
         Self { gain, input }
+    }
+
+    pub fn gain(&self) -> dB {
+        self.gain
     }
 }
 
