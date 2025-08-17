@@ -41,6 +41,10 @@ impl EffectDAG {
     pub fn nodes(&self) -> &[Arc<dyn Effect>] {
         &self.nodes
     }
+
+    pub fn set_root_index(&mut self, root_index: usize) {
+        self.root_index = root_index;
+    }
 }
 
 impl Effect for EffectDAG {

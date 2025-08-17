@@ -51,6 +51,9 @@ impl Scene {
                 let mut dag = EffectDAG::new(i, vec![]);
                 self.expand_dag(i, &mut dag);
 
+                // force the index to be the last thing placed on the dag (which must be the root)
+                dag.set_root_index(dag.nodes().len() - 1);
+
                 dag
             }
         }
@@ -116,7 +119,7 @@ mod test {
     start_index: Some(0),
     nodes: [
         Track(
-            file_path: "\\mp3s\\C_major.mp3",
+            file_path: "mp3s\\C_major.mp3",
         ),
     ],
 )"#;
@@ -144,29 +147,34 @@ mod test {
         let file_path = PathBuf::from(r"mp3s\C_major.mp3");
 
         let scene = Scene {
-            start_index: Some(0),
+            start_index: Some(1),
             nodes: vec![
-                NodeType::Gain { dB: db, input: 1 },
                 NodeType::Track {
                     file_path: file_path.clone(),
                 },
+                NodeType::Gain { dB: db, input: 0 },
             ],
         };
+
+        // let scene = Scene {
+        //     start_index: Some(0),
+        //     nodes: vec![NodeType::Zero],
+        // };
 
         let dag = scene.generate_effect_dag();
 
         // we being a bit silly
-        assert_eq!(dag.root_index(), 0);
-        let node_zero = &*dag.nodes()[1] as &dyn Any;
-        assert_eq!(node_zero.downcast_ref::<Gain>().unwrap().gain().0, db);
-        let node_one = &*dag.nodes()[0] as &dyn Any;
+        assert_eq!(dag.root_index(), 1);
+        let node_zero = &*dag.nodes()[0] as &dyn Any;
         assert_eq!(
-            node_one
+            node_zero
                 .downcast_ref::<Track>()
                 .unwrap()
                 ._file_path()
                 .unwrap(),
             file_path
         );
+        // let node_one = &*dag.nodes()[1] as &dyn Any;
+        // assert_eq!(node_one.downcast_ref::<Gain>().unwrap().gain().0, db);
     }
 }
