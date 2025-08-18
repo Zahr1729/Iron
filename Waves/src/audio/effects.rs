@@ -2,7 +2,6 @@ use std::any::Any;
 use std::sync::Arc;
 
 use crate::common::{dB, track::Track};
-use crate::scene::NodeType;
 
 pub trait Effect: Send + Sync + Any {
     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize);

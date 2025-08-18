@@ -1,4 +1,5 @@
 use eframe::egui;
+use egui_node_graph2::Graph;
 use symphonia::core::errors::Error;
 
 use std::{
@@ -17,7 +18,14 @@ use crate::{
     audio::{dag::EffectDAG, effects::Zero},
     common::track::Track,
     player::{AudioThread, AudioUpdate},
-    ui::{ProgressTracker, ThreadTracker},
+    ui::{
+        eqwidget::EQWidget,
+        graph::{self, NodeGraph},
+        playpausebutton::PlayPauseButton,
+        progresstracker::ProgressTracker,
+        threadtracker::ThreadTracker,
+        waveformwidget::WaveformWidget,
+    },
 };
 
 struct MyEguiApp {
@@ -84,6 +92,11 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             // UI
 
+            let graph = NodeGraph::new();
+            ui.add(graph);
+
+            return;
+
             while let Ok(update) = self.audio_thread.updates.try_recv() {
                 match update {
                     AudioUpdate::CurrentSample(s) => {
@@ -100,18 +113,15 @@ impl eframe::App for MyEguiApp {
             }
 
             if let Some(t) = self.active_track.as_ref() {
-                let waveform_widget = ui::WaveformWidget::new(
-                    t,
-                    self.current_sample,
-                    self.audio_thread.commands.clone(),
-                );
+                let waveform_widget =
+                    WaveformWidget::new(t, self.current_sample, self.audio_thread.commands.clone());
                 ui.add(waveform_widget);
 
-                let eq_widget = ui::EQWidget::new(t, 1024, self.current_sample);
+                let eq_widget = EQWidget::new(t, 1024, self.current_sample);
                 ui.add(eq_widget);
 
                 // Perhaps group this all inside playpausebutton
-                let play_pause_button = ui::PlayPauseButton::new(self.is_paused);
+                let play_pause_button = PlayPauseButton::new(self.is_paused);
                 let response = ui.add(play_pause_button);
                 if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
                     match self.is_paused {
