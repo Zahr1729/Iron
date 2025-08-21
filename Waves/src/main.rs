@@ -29,6 +29,7 @@ use crate::{
 };
 
 struct MyEguiApp {
+    node_graph: NodeGraph,
     effect_dag: Arc<EffectDAG>,
     active_track: Option<Arc<Track>>,
     tx_loader: mpsc::Sender<Track>,
@@ -54,6 +55,7 @@ impl MyEguiApp {
         let (tx, rx) = mpsc::channel();
 
         Self {
+            node_graph: NodeGraph::new(),
             effect_dag: Arc::new(EffectDAG::new(0, vec![Arc::new(Zero)])),
             tx_loader: tx,
             rx_loader: rx,
@@ -92,8 +94,7 @@ impl eframe::App for MyEguiApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             // UI
 
-            let graph = NodeGraph::new();
-            ui.add(graph);
+            self.node_graph.node_graph_ui(ui);
 
             return;
 

@@ -1,8 +1,10 @@
+use std::sync::Arc;
+
 use eframe::{
     egui::{
-        self, Area, Color32, Context, DragAndDrop, DragValue, Frame, Grid, Id, Label, LayerId,
-        Margin, Pos2, Rect, Response, RichText, Sense, Shape, Slider, Stroke, StrokeKind, Ui, Vec2,
-        Widget, Window, frame, output, style::default_text_styles,
+        self, Area, Color32, Context, DragAndDrop, DragValue, Frame, Grid, Id, InnerResponse,
+        Label, LayerId, Margin, Pos2, Rect, Response, RichText, Sense, Shape, Slider, Stroke,
+        StrokeKind, Ui, Vec2, Widget, Window, frame, output, style::default_text_styles,
     },
     epaint::{CircleShape, CubicBezierShape, PathStroke, RectShape},
 };
@@ -10,7 +12,15 @@ use egui_plot::Plot;
 
 use crate::main;
 
-#[derive(Clone, Copy)]
+/// This is to collect data for the edge drag and drop to connect things up
+#[derive(Debug, Copy, Clone)]
+struct NodeCircleIdentifier {
+    node_index: usize,
+    circle_index: usize,
+    circle_is_input: bool,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct NodeCircle {
     index: usize,
     is_input: bool,
@@ -70,50 +80,33 @@ fn get_generic_circle_rect(ui: &mut Ui, pos: Pos2, radius: f32) -> Rect {
     Rect::from_two_pos(pos - radius_offset, pos + radius_offset)
 }
 
-fn draw_bezier(ui: &mut Ui, start: Pos2, end: Pos2, width: f32, colour: Color32) {
-    fn get_cubic_bezier_coords(a: Pos2, b: Pos2) -> [Pos2; 4] {
-        [a, Pos2 { x: b.x, y: a.y }, Pos2 { x: a.x, y: b.y }, b]
-    }
-
-    let points = get_cubic_bezier_coords(start, end);
-
-    let bezier = CubicBezierShape {
-        points,
-        closed: false,
-        fill: Color32::TRANSPARENT,
-        stroke: PathStroke::new(width, colour),
-    };
-
-    //ui.painter().add(top_bezier);
-    ui.painter().add(bezier);
-}
-
-impl Widget for NodeCircle {
-    fn ui(self, ui: &mut Ui) -> Response {
+impl NodeCircle {
+    /// This function's inner response contains identifying information for the node that began the drag and drop when it is released
+    fn node_circle_ui(
+        self,
+        ui: &mut Ui,
+        parent_index: usize,
+    ) -> InnerResponse<Option<Arc<NodeCircleIdentifier>>> {
         // First do logic and draw bezier underneath
 
         let rect = get_generic_circle_rect(ui, self.pos, self.radius);
 
         let r = ui.allocate_rect(rect, Sense::all());
 
-        if self.is_input
-            && DragAndDrop::has_payload_of_type::<&'static str>(ui.ctx())
-            && r.contains_pointer()
-        {
-            let payload = DragAndDrop::payload::<&'static str>(ui.ctx()).unwrap();
-
-            println!("Hovering over input while dragging {:?}", payload);
-        }
-
         //println!("{:?}", r);
-        if !self.is_input && r.dragged() {
-            // Draw line segment
-            DragAndDrop::set_payload(ui.ctx(), "poopoo");
+        if r.dragged() {
+            // Setup the payload
+            let payload = NodeCircleIdentifier {
+                node_index: parent_index,
+                circle_index: self.index,
+                circle_is_input: self.is_input,
+            };
+            DragAndDrop::set_payload(ui.ctx(), payload);
 
             match r.hover_pos() {
                 Some(mouse_pos) => {
                     // Draw the external boundary bezier
-                    draw_bezier(
+                    Edge::draw_bezier(
                         ui,
                         self.pos,
                         mouse_pos,
@@ -141,29 +134,34 @@ impl Widget for NodeCircle {
                     );
 
                     // Draw the internal bezier so it looks nice
-                    draw_bezier(ui, self.pos, mouse_pos, self.radius, self.circle_colour);
+                    Edge::draw_bezier(ui, self.pos, mouse_pos, self.radius, self.circle_colour);
                 }
                 _ => (),
             }
 
-            return r; // So we don't draw circle again
+            // So we don't draw circle again
+        } else {
+            // Just draw circle
+            draw_circle(
+                ui,
+                self.pos,
+                self.radius,
+                self.line_width,
+                self.circle_colour,
+                self.edge_colour,
+            );
         }
 
-        // Then draw circle first
-        draw_circle(
-            ui,
-            self.pos,
-            self.radius,
-            self.line_width,
-            self.circle_colour,
-            self.edge_colour,
-        );
+        let return_value;
 
-        r
+        let payload = r.dnd_release_payload::<NodeCircleIdentifier>();
+        return_value = InnerResponse::new(payload, r);
+
+        return_value
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Node {
     index: usize,
 
@@ -369,34 +367,97 @@ impl Node {
             });
     }
 
+    /// Return the appropriate (input, output) tuple if the edge is clearly (but not necessarily) valid
+    /// (ie it doesnt feed into itself and input goes to output)
+    /// We must do a more in depth check to make sure we have no cycles in the NodeGraph struct later.
+    fn get_edge_tuple(
+        &self,
+        other_data: Option<Arc<NodeCircleIdentifier>>,
+        this_data: Arc<NodeCircleIdentifier>,
+    ) -> Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)> {
+        match other_data {
+            None => None,
+            Some(other_circle) => {
+                if self.index != other_circle.node_index {
+                    let this_circle = Arc::<NodeCircleIdentifier>::new(NodeCircleIdentifier {
+                        node_index: self.index,
+                        circle_index: this_data.circle_index,
+                        circle_is_input: this_data.circle_is_input,
+                    });
+
+                    println!("NEW LINE YAY");
+
+                    match this_data.circle_is_input {
+                        true => Some((this_circle, other_circle)),
+                        false => Some((other_circle, this_circle)),
+                    }
+                } else {
+                    None
+                }
+            }
+        }
+    }
+
     /// This function both draws and does the logic for each circle
-    fn implement_circles(mut self, ui: &mut Ui, top_left: Pos2) {
+    /// In the event of a released drag and drop that actually should build an edge it returns data about both entries
+    /// This data will only ever work if it is between an input node and output node
+    /// The return value will be of the form (input, output)
+    fn implement_circles(
+        mut self,
+        ui: &mut Ui,
+        top_left: Pos2,
+    ) -> Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)> {
         // Iterate through all the inputs first then outputs
+        let mut return_value = None; // By default
         for i in 0..(self.input_count + self.output_count) {
             // Want to get rect that is just offset from this so its on the edge
 
             // get a bool for if we are dealing with inputs
             let is_input = i < self.input_count;
-            let y_pos = match is_input {
+            let circle_index = match is_input {
                 true => i,
                 false => i - self.input_count,
             };
 
-            let pos = self.get_interactable_circle_centres(ui, y_pos, top_left, is_input);
+            let pos = self.get_interactable_circle_centres(ui, circle_index, top_left, is_input);
 
             // give position data to our node_circles
 
-            match is_input {
+            // This trickery also discounts anything that is not input to output or output to input
+            // The values will always be of the form (input, output)
+
+            let other_data = match is_input {
                 true => {
-                    self.input_node_circles[y_pos].pos = pos;
-                    ui.add(self.input_node_circles[y_pos]);
+                    self.input_node_circles[circle_index].pos = pos;
+                    // do the ui
+                    self.input_node_circles[circle_index]
+                        .node_circle_ui(ui, self.index)
+                        .inner
                 }
                 false => {
-                    self.output_node_circles[y_pos].pos = pos;
-                    ui.add(self.output_node_circles[y_pos]);
+                    self.output_node_circles[circle_index].pos = pos;
+                    // do the ui
+                    self.output_node_circles[circle_index]
+                        .node_circle_ui(ui, self.index)
+                        .inner
                 }
+            };
+            let this_data = NodeCircleIdentifier {
+                node_index: self.index,
+                circle_index,
+                circle_is_input: is_input,
+            };
+
+            // make sure we are actually sending data back
+            match return_value {
+                Some(_) => continue,
+                None => return_value = self.get_edge_tuple(other_data, this_data.into()),
             }
+
+            //println!("{:?} impl circles", return_value);
         }
+
+        return_value
     }
 
     /// Get the rect for a general interactable circle
@@ -436,11 +497,23 @@ impl Node {
 
         pos
     }
-}
 
-impl Widget for Node {
-    fn ui(mut self, ui: &mut Ui) -> Response {
-        egui::Area::new(egui::Id::new(format!("graph_node {}", self.index)))
+    fn get_circle_pos(&self, circle_index: usize, is_input: bool) -> Pos2 {
+        if is_input {
+            self.input_node_circles[circle_index].pos
+        } else {
+            self.output_node_circles[circle_index].pos
+        }
+    }
+
+    /// Do the ui of the node
+    /// Return data should be inner response with data about building a new edge if it is required
+    fn node_ui(
+        self,
+        ui: &mut Ui,
+    ) -> InnerResponse<Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)>> {
+        let mut new_edge_data = None;
+        let resp = egui::Area::new(egui::Id::new(format!("graph_node {}", self.index)))
             .show(ui.ctx(), |ui| {
                 let top_left = ui.next_widget_position();
 
@@ -448,17 +521,98 @@ impl Widget for Node {
                 self.draw_node_without_circles(ui);
 
                 // Do the stuff with the selectible nodes
-                self.implement_circles(ui, top_left);
+                new_edge_data = self.implement_circles(ui, top_left);
+                //println!("NODE: {:?}", new_edge_data);
             })
-            .response
+            .response;
+
+        //println!("{:?} AAAAAAAAAAAAAA", new_edge_data);
+
+        InnerResponse {
+            inner: new_edge_data,
+            response: resp,
+        }
     }
 }
 
+/// This is Expected to be expanded to include data, but for now we move
+#[derive(Debug, Clone, Copy)]
 pub struct Edge {
-    start: Vec2,
-    end: Vec2,
+    start: NodeCircleIdentifier,
+    end: NodeCircleIdentifier,
+
+    inner_colour: Color32,
+    outer_colour: Color32,
+
+    inner_width: f32,
+    line_width: f32,
 }
 
+impl Edge {
+    pub fn new(start: NodeCircleIdentifier, end: NodeCircleIdentifier) -> Self {
+        let line_width = 2.0;
+        let radius = 6.0;
+        let circle_colour = Color32::BLUE;
+        let line_colour = Color32::from_rgb(200, 200, 200);
+
+        Self {
+            start,
+            end,
+            inner_colour: circle_colour,
+            outer_colour: line_colour,
+            inner_width: radius,
+            line_width,
+        }
+    }
+
+    fn get_cubic_bezier_coords(a: Pos2, b: Pos2) -> [Pos2; 4] {
+        [a, Pos2 { x: b.x, y: a.y }, Pos2 { x: a.x, y: b.y }, b]
+    }
+
+    fn draw_bezier(ui: &mut Ui, start: Pos2, end: Pos2, width: f32, colour: Color32) {
+        let points = Edge::get_cubic_bezier_coords(start, end);
+
+        let bezier = CubicBezierShape {
+            points,
+            closed: false,
+            fill: Color32::TRANSPARENT,
+            stroke: PathStroke::new(width, colour),
+        };
+
+        //ui.painter().add(top_bezier);
+        ui.painter().add(bezier);
+    }
+
+    fn get_start_pos(&self, graph: &NodeGraph) -> Pos2 {
+        graph.get_node_circle_pos(self.start)
+    }
+
+    fn get_end_pos(&self, graph: &NodeGraph) -> Pos2 {
+        graph.get_node_circle_pos(self.end)
+    }
+
+    fn draw_outer(&self, ui: &mut Ui, graph: &NodeGraph) {
+        //println!("SHOULD BE WORKING");
+        let start = self.get_start_pos(graph);
+        let end = self.get_end_pos(graph);
+
+        println!("{:?}, {:?}", start, end);
+
+        println!("drawing bezier outer");
+
+        Edge::draw_bezier(ui, start, end, self.line_width, self.outer_colour);
+    }
+
+    fn draw_inner(&self, ui: &mut Ui, graph: &NodeGraph) {
+        //println!("{:?}", graph);
+        let start = self.get_start_pos(graph);
+        let end = self.get_end_pos(graph);
+
+        Edge::draw_bezier(ui, start, end, self.inner_width, self.inner_colour);
+    }
+}
+
+#[derive(Debug)]
 pub struct NodeGraph {
     nodes: Vec<Node>,
     edges: Vec<Edge>,
@@ -467,32 +621,55 @@ pub struct NodeGraph {
 impl NodeGraph {
     pub fn new() -> Self {
         Self {
-            nodes: vec![
-                Node::new(0, 2, 1),
-                // Node {
-                //     index: 1,
-                //     pos: (20.0, 20.0),
-                //     height: 200.0,
-                //     width: 300.0,
-                //     inputs: vec![],
-                //     outputs: vec![],
-                // },
-            ],
+            nodes: vec![Node::new(0, 2, 1), Node::new(1, 1, 2)],
             edges: vec![],
         }
     }
-}
 
-impl Widget for NodeGraph {
-    fn ui(self, ui: &mut eframe::egui::Ui) -> Response {
+    /// This function is given data to add a new edge
+    /// It checks if it is a valid edge, and if so it adds it (if not do a println for now)
+    fn add_edge(&mut self, start: NodeCircleIdentifier, end: NodeCircleIdentifier) {
+        // Check for updates (primarily this is detecting the instantiation of a)
+        //println!("ADDING EDGE");
+        self.edges.push(Edge::new(start, end));
+    }
+
+    fn get_node_circle_pos(&self, identifier: NodeCircleIdentifier) -> Pos2 {
+        self.nodes[identifier.node_index]
+            .get_circle_pos(identifier.node_index, identifier.circle_is_input)
+    }
+
+    pub fn node_graph_ui(&mut self, ui: &mut eframe::egui::Ui) -> Response {
         // let mut area = area.begin(ctx);
 
-        // area.with_widget_info(|| WidgetInfo::labeled(WidgetType::Window, true, title.text()));
-        let mut r = None;
-        for node in self.nodes {
-            let resp = ui.add(node);
+        //println!("{}", self.edges.len());
 
-            r = Some(resp);
+        // Draw the outer edges
+        for i in 0..self.edges.len() {
+            let edge = self.edges[i].clone();
+            edge.draw_outer(ui, self);
+        }
+
+        // do node ui (and if we have done the prerequisites for edge, add new edge);
+        let mut r = None;
+        for i in 0..self.nodes.len() {
+            let node = self.nodes[i].clone();
+            let inner_resp = node.node_ui(ui);
+
+            match inner_resp.inner {
+                None => (),
+                Some((start, end)) => {
+                    self.add_edge(*start, *end);
+                }
+            }
+
+            r = Some(inner_resp.response);
+        }
+
+        // Draw the inner edges (doing it this way makes it look cohesive)
+        for i in 0..self.edges.len() {
+            let edge = self.edges[i].clone();
+            edge.draw_inner(ui, self);
         }
 
         r.unwrap()
