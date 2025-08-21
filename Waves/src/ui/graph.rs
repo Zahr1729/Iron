@@ -14,7 +14,7 @@ use egui_plot::Plot;
 use crate::main;
 
 /// This is to collect data for the edge drag and drop to connect things up
-#[derive(Debug, Copy, Clone)]
+#[derive(Debug, Copy, Clone, PartialEq)]
 struct NodeCircleIdentifier {
     node_index: usize,
     circle_index: usize,
@@ -364,11 +364,11 @@ impl Node {
             .show(ui, |ui| {
                 // Header
 
-                self.clone().draw_header(ui);
+                self.draw_header(ui);
 
                 // Main Content
 
-                self.clone().draw_main(ui);
+                self.draw_main(ui);
             });
     }
 
@@ -544,7 +544,7 @@ impl Node {
 }
 
 /// This is Expected to be expanded to include data, but for now we move
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub struct Edge {
     input: NodeCircleIdentifier,
     output: NodeCircleIdentifier,
@@ -620,26 +620,26 @@ impl Edge {
         Edge::draw_bezier(ui, start, end, self.inner_width, self.inner_colour);
     }
 
-    fn draw_start_node(&self, ui: &mut Ui, graph: &mut NodeGraph) {
-        let mut node = &graph.nodes[self.input.node_index];
+    fn draw_start_node(&self, ui: &mut Ui, graph: &NodeGraph) {
+        let node = &graph.nodes[self.input.node_index];
         node.input_node_circles[self.input.circle_index].draw(ui);
     }
 
-    fn draw_end_node(&self, ui: &mut Ui, graph: &mut NodeGraph) {
-        let mut node = &graph.nodes[self.output.node_index];
+    fn draw_end_node(&self, ui: &mut Ui, graph: &NodeGraph) {
+        let node = &graph.nodes[self.output.node_index];
         node.output_node_circles[self.output.circle_index].draw(ui);
     }
 
-    fn draw_edge(&self, ui: &mut Ui, graph: &mut NodeGraph) {
+    fn draw_edge(&self, ui: &mut Ui, graph: &NodeGraph) {
         // draw outer edge
-        self.draw_outer(ui, &graph);
+        self.draw_outer(ui, graph);
 
         // draw nodes
         self.draw_start_node(ui, graph);
         self.draw_end_node(ui, graph);
 
         // draw inner edge
-        self.draw_inner(ui, &graph);
+        self.draw_inner(ui, graph);
     }
 }
 
@@ -652,7 +652,12 @@ pub struct NodeGraph {
 impl NodeGraph {
     pub fn new() -> Self {
         Self {
-            nodes: vec![Node::new(0, 2, 1), Node::new(1, 1, 2)],
+            nodes: vec![
+                Node::new(0, 2, 1),
+                Node::new(1, 1, 2),
+                Node::new(2, 1, 1),
+                Node::new(3, 1, 0),
+            ],
             edges: vec![],
         }
     }
@@ -670,25 +675,86 @@ impl NodeGraph {
             .get_circle_pos(identifier.circle_index, identifier.circle_is_input)
     }
 
+    /// Returns true iff the node circle identifiers provided give the same edge as one already existing
+    fn check_edge_already_exists(
+        &self,
+        input: NodeCircleIdentifier,
+        output: NodeCircleIdentifier,
+    ) -> bool {
+        for edge in &self.edges {
+            if edge.input == input && edge.output == output {
+                return true;
+            }
+        }
+        false
+    }
+
+    /// Returns true if it detects a path only going upstream between two nodes
+    /// ie from the output nodes the input data
+    /// This means in terms of circle nodes its really going towards the output circles (which really are inputs to the edges)
+    fn dfs_upstream_path(&self, current_node_index: usize, destination_index: usize) -> bool {
+        println!("{}, {}", current_node_index, destination_index);
+        if (current_node_index == destination_index) {
+            return true;
+        }
+
+        // iterate through each edge
+        for edge in &self.edges {
+            // if there is an edge w/ output in this node search the corresponding input
+            if edge.input.node_index == current_node_index {
+                if self.dfs_upstream_path(edge.output.node_index, destination_index) {
+                    return true;
+                }
+            }
+        }
+
+        false
+    }
+
+    /// Returns true iff adding an edge with this input and output will not make a cycle (ie the graph stays a dag)
+    /// Note that this function ASSUMES that it was a dag to begin with, ie the new edge is a Necessary part of the path of traversal.
+    fn check_will_form_dag(
+        &self,
+        input: NodeCircleIdentifier,
+        output: NodeCircleIdentifier,
+    ) -> bool {
+        // method is simple, begin with the input node, then depth first search along its inputs until we either end or fail
+
+        // is there a path connecting the two points
+        let b = self.dfs_upstream_path(output.node_index, input.node_index);
+
+        // return opposite
+        !b
+    }
+
     pub fn node_graph_ui(&mut self, ui: &mut eframe::egui::Ui) -> Response {
         // let mut area = area.begin(ctx);
 
         // do node ui and find if we need a new edge
         let mut r = None;
-        for i in 0..self.nodes.len() {
-            let node = &mut self.nodes[i];
+        let mut i = None;
+        for node in &mut self.nodes {
             let inner_resp = node.node_ui(ui);
 
-            match inner_resp.inner {
-                None => (),
-                Some((start, end)) => {
-                    self.add_edge(*start, *end);
+            r = Some(inner_resp.response);
 
-                    println!("{:?}, {:?}", start, end);
+            i = i.or(inner_resp.inner);
+        }
+
+        match i {
+            None => (),
+            Some((input, output)) => {
+                // must check if (a) this edge does not already exist
+                // and (b) this edge does not cause the dag to stop being a dag
+                if !self.check_edge_already_exists(*input, *output) {
+                    if self.check_will_form_dag(*input, *output) {
+                        self.add_edge(*input, *output);
+                        println!("{:?}, {:?}", input, output);
+                    } else {
+                        println!("NO EDGE AS DAG CONDITION FAILED")
+                    }
                 }
             }
-
-            r = Some(inner_resp.response);
         }
 
         // do edge ui
@@ -708,8 +774,8 @@ impl NodeGraph {
         });
 
         // Draw the edges
-        for i in 0..self.edges.len() {
-            self.edges[i].clone().draw_edge(m, self);
+        for edge in &self.edges {
+            edge.draw_edge(m, self);
         }
 
         r.unwrap()
