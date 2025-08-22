@@ -744,11 +744,13 @@ impl NodeGraph {
         let g1 = Arc::new(Gain::new(dB(-12.0), s.zero.clone()));
         let g2 = Arc::new(Gain::new(dB(12.0), s.zero.clone()));
         let s1 = Arc::new(SineWave::new(0.5, 440.0, 0.0));
+        let s2 = Arc::new(SineWave::new(0.5, 480.0, 0.0));
         let a1 = Arc::new(Add::new(s.zero.clone(), s.zero.clone()));
 
         s.add_node(g1);
         s.add_node(g2);
         s.add_node(s1);
+        s.add_node(s2);
         s.add_node(a1);
 
         s
