@@ -1,4 +1,4 @@
-use eframe::egui;
+use eframe::egui::{self, Button};
 use egui_node_graph2::Graph;
 use symphonia::core::errors::Error;
 
@@ -54,8 +54,8 @@ impl MyEguiApp {
 
         let (tx, rx) = mpsc::channel();
 
-        Self {
-            node_graph: NodeGraph::new(),
+        let mut s = Self {
+            node_graph: NodeGraph::new_non_trivial(),
             effect_dag: Arc::new(EffectDAG::new(0, vec![Arc::new(Zero)])),
             tx_loader: tx,
             rx_loader: rx,
@@ -64,7 +64,11 @@ impl MyEguiApp {
             ops_in_progress: Default::default(),
             current_sample: 0,
             is_paused: true,
-        }
+        };
+
+        s.node_graph.audio_data.sample_rate = 48000;
+
+        s
     }
 }
 
@@ -96,12 +100,11 @@ impl eframe::App for MyEguiApp {
 
             self.node_graph.node_graph_ui(ui);
 
-            return;
-
             while let Ok(update) = self.audio_thread.updates.try_recv() {
                 match update {
                     AudioUpdate::CurrentSample(s) => {
                         self.current_sample = s;
+                        self.node_graph.audio_data.current_sample = s;
                     }
                 }
             }
@@ -109,33 +112,39 @@ impl eframe::App for MyEguiApp {
             // Take a look at the channel, if theres something new, update the "active file" data
             if let Ok(rx) = self.rx_loader.try_recv() {
                 // Go to the beginning to ensure no nasty crashes.
-                self.current_sample = 0;
-                self.active_track = Some(Arc::new(rx));
+                //self.current_sample = 0;
+
+                self.node_graph.add_track(Arc::new(rx));
             }
 
-            if let Some(t) = self.active_track.as_ref() {
-                let waveform_widget =
-                    WaveformWidget::new(t, self.current_sample, self.audio_thread.commands.clone());
-                ui.add(waveform_widget);
+            // if let Some(t) = self.active_track.as_ref() {
+            //     let waveform_widget =
+            //         WaveformWidget::new(t, self.current_sample, self.audio_thread.commands.clone());
+            //     ui.add(waveform_widget);
 
-                let eq_widget = EQWidget::new(t, 1024, self.current_sample);
-                ui.add(eq_widget);
+            //     let eq_widget = EQWidget::new(t, 1024, self.current_sample);
+            //     ui.add(eq_widget);
+            // }
 
-                // Perhaps group this all inside playpausebutton
-                let play_pause_button = PlayPauseButton::new(self.is_paused);
-                let response = ui.add(play_pause_button);
-                if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
-                    match self.is_paused {
-                        true => self
-                            .audio_thread
-                            .send_command(player::AudioCommand::PlayFrom(
-                                t.clone(),
-                                self.current_sample,
-                            )),
-                        false => self.audio_thread.send_command(player::AudioCommand::Stop),
-                    }
-                    self.is_paused = !self.is_paused;
+            // Perhaps group this all inside playpausebutton
+            let play_pause_button = PlayPauseButton::new(self.is_paused);
+            let response = ui.add(play_pause_button);
+            if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
+                match self.is_paused {
+                    true => self
+                        .audio_thread
+                        .send_command(player::AudioCommand::PlayFrom(
+                            self.node_graph.output.clone(),
+                            self.current_sample,
+                        )),
+                    false => self.audio_thread.send_command(player::AudioCommand::Stop),
                 }
+                self.is_paused = !self.is_paused;
+            }
+
+            let resp = ui.add(Button::new("GO TO ZERO"));
+            if resp.clicked() {
+                self.current_sample = 0;
             }
 
             // Rip the data from the file (drag and drop)

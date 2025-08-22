@@ -47,8 +47,8 @@ impl EffectDAG {
     }
 }
 
-impl Effect for EffectDAG {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
-        self.root().apply(output, start_sample, channels);
-    }
-}
+// impl Effect for EffectDAG {
+//     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+//         self.root().apply(output, start_sample, channels);
+//     }
+// }

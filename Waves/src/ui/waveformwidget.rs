@@ -15,14 +15,14 @@ pub struct WaveformWidget<'a> {
     allow_zoom: egui::Vec2b,
     allow_drag: egui::Vec2b,
     allow_scroll: egui::Vec2b,
-    tx_commands: Sender<AudioCommand>,
+    tx_commands: Option<Sender<AudioCommand>>,
 }
 
 impl<'a> WaveformWidget<'a> {
     pub fn new(
         track: &'a Arc<Track>,
         current_sample: usize,
-        tx_commands: Sender<AudioCommand>,
+        tx_commands: Option<Sender<AudioCommand>>,
     ) -> Self {
         Self {
             track,
@@ -207,9 +207,14 @@ impl Widget for WaveformWidget<'_> {
                 let x_time = coord.x.max(0.0).min(track_len * time_per_sample);
 
                 let x_sample = (x_time * samp_rate) as usize;
-                self.tx_commands
-                    .send(AudioCommand::RelocateTo(self.track.clone(), x_sample))
-                    .expect("Can't reset time");
+                match self.tx_commands {
+                    None => (),
+                    Some(tx_commands) => {
+                        // tx_commands
+                        //     .send(AudioCommand::RelocateTo(self.track.clone(), x_sample))
+                        //     .expect("Can't reset time");
+                    }
+                }
 
                 self.current_sample = x_sample;
             }

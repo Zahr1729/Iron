@@ -1,4 +1,4 @@
-use crate::audio::effects::Gain;
+use crate::audio::effects::{Gain, Output};
 use crate::common::dB;
 use crate::{audio::effects::Effect, common::track::Track};
 
@@ -16,11 +16,11 @@ use cpal::{
 #[derive(Debug)]
 pub enum AudioCommand {
     /// Perhaps later change Track to something that is "playable", with "playable" meaning that it can find a "next_sample"
-    PlayFrom(Arc<Track>, usize),
+    PlayFrom(Arc<Output>, usize),
     /// We need the argument for where the pointer is right now
     Stop,
     /// This is specifically for moving the cursor and continues with what it was doing before!
-    RelocateTo(Arc<Track>, usize),
+    RelocateTo(Arc<Output>, usize),
 }
 
 /// This we want to send back (if anything at all)
@@ -36,7 +36,7 @@ pub struct AudioThread {
 
 fn get_stream_from_sample(
     output_device: Device,
-    track: Arc<Track>,
+    output: Arc<Output>,
     start_point: usize,
     tx: mpsc::Sender<AudioUpdate>,
 ) -> Stream {
@@ -47,13 +47,11 @@ fn get_stream_from_sample(
 
     let mut sample_clock = start_point;
 
-    let gain = Gain::new(dB(0.03), track);
-
     let stream = output_device
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                gain.apply(data, sample_clock, channels);
+                output.apply(data, sample_clock, channels);
                 sample_clock += data.len() / channels;
                 tx.send(AudioUpdate::CurrentSample(sample_clock))
                     .expect("Channel Closed");
