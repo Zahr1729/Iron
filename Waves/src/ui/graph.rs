@@ -5,7 +5,7 @@ use eframe::{
         self, Area, Color32, Context, DragAndDrop, DragValue, Frame, Grid, Id, InnerResponse,
         Label, LayerId, Margin, Order, Pos2, Rect, Response, RichText, Sense, Shape, Slider,
         Stroke, StrokeKind, Ui, UiBuilder, UiStackInfo, Vec2, Widget, Window, ahash::HashMap,
-        frame, output, style::default_text_styles,
+        frame, mutex::Mutex, output, style::default_text_styles,
     },
     epaint::{CircleShape, CubicBezierShape, PathStroke, RectShape},
 };
@@ -34,7 +34,7 @@ impl GraphAudioData {
 /// it should be passed throughout the graph and all style information
 /// should be accessible through this struct
 #[derive(Debug)]
-struct GraphStyle {
+pub struct GraphStyle {
     node_line_width: f32,
     node_circle_radius: f32,
 
@@ -50,6 +50,10 @@ struct GraphStyle {
 
     corner_radius: f32,
     margin: f32,
+    plot_margin: f32,
+
+    plot_height: f32,
+    plot_width: f32,
 
     header_height: f32,
     header_text_size: f32,
@@ -82,6 +86,10 @@ impl Default for GraphStyle {
 
             corner_radius: 10.0,
             margin: 10.0,
+            plot_margin: 5.0,
+
+            plot_height: 75.0,
+            plot_width: 150.0,
 
             header_height: 40.0,
             header_text_size: 20.0,
@@ -380,9 +388,21 @@ impl Node {
                             ui.end_row();
                         }
                     });
+
+                // implement node specific data ie gain value
+                self.effect.data_ui(ui, style);
+            });
+
+        egui::frame::Frame::new()
+            .inner_margin(style.plot_margin)
+            .show(ui, |ui| {
                 // Now lets draw the effect
-                self.effect
-                    .draw(ui, audio_data.current_sample, audio_data.sample_rate);
+                self.effect.draw_plot(
+                    ui,
+                    audio_data.current_sample,
+                    audio_data.sample_rate,
+                    (style.plot_width, style.plot_height),
+                );
             });
     }
 

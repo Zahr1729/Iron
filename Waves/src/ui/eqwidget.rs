@@ -3,12 +3,16 @@ use std::sync::Arc;
 use eframe::egui::{self, Widget};
 use egui_plot::{GridMark, Line};
 
-use crate::common::{self, track::Track};
+use crate::common::{self, dB, track::Track};
 
 pub struct EQWidget {
     sample_data: Vec<f32>,
     data_width: usize,
     sample_rate: u32,
+
+    plot_height: f32,
+    plot_width: f32,
+
     _vertical: bool,
     allow_zoom: egui::Vec2b,
     allow_drag: egui::Vec2b,
@@ -16,11 +20,13 @@ pub struct EQWidget {
 }
 
 impl EQWidget {
-    pub fn new(sample_data: Vec<f32>, sample_rate: u32) -> Self {
+    pub fn new(sample_data: Vec<f32>, sample_rate: u32, plot_size: (f32, f32)) -> Self {
         Self {
             data_width: sample_data.len(),
             sample_data,
             sample_rate,
+            plot_height: plot_size.1,
+            plot_width: plot_size.0,
             _vertical: true,
             allow_zoom: [true, false].into(),
             allow_drag: [true, false].into(),
@@ -60,16 +66,28 @@ impl EQWidget {
             &track.sample_data().0[current_range.start as usize..current_range.end as usize]
         };
 
-        Self::new(useful_samples.to_vec(), sample_rate)
+        Self::new(useful_samples.to_vec(), sample_rate, (150.0, 75.0))
     }
 
     fn get_freq_line(&self) -> Line<'_> {
         let freq_data = common::fft(&self.sample_data);
 
+        //println!("{:?} {}", freq_data, freq_data.len());
+
         let coords: Vec<_> = freq_data[0..(self.data_width as usize / 2)]
             .iter()
             .enumerate()
-            .map(|(i, &f)| [(i as f64).log2(), ((f as f64) / 5.0).log2() + 6.0])
+            .map(|(i, &f)| {
+                [
+                    {
+                        match i {
+                            0 => (0.01f64).log2(),
+                            _ => (i as f64).log2(),
+                        }
+                    },
+                    dB::from_amplitude(f).0 as f64,
+                ]
+            })
             .collect();
 
         let freq_line = egui_plot::Line::new("frequency", coords)
@@ -96,8 +114,10 @@ impl Widget for EQWidget {
 
         let freq_line = self.get_freq_line();
 
-        let max_x = (self.data_width as f64).log2() - 1.0;
-        let min_x = max_x * 0.29;
+        let max_x =
+            22000.0f64.log2() - (self.sample_rate as f64).log2() + (self.data_width as f64).log2();
+        let min_x =
+            18.0f64.log2() - (self.sample_rate as f64).log2() + (self.data_width as f64).log2();
 
         // Recall that the maximum frequency shown is sample rate / 2 so we can draw grid lines now
 
@@ -110,7 +130,10 @@ impl Widget for EQWidget {
                 let x_coords: Vec<GridMark> = [
                     20.0, 30.0, 100.0, 200.0, 300.0, 1000.0, 2000.0, 3000.0, 10000.0, 20000.0,
                 ]
-                .map(|f: f64| (f.log2() * max_x) / ((self.sample_rate as f64).log2() - 1.0))
+                .map(|f: f64| {
+                    f.log2() - (self.sample_rate as f64).log2()
+                        + (self.sample_data.len() as f64).log2()
+                })
                 .map(|v| GridMark {
                     value: v,
                     step_size: 100.0,
@@ -144,8 +167,8 @@ impl Widget for EQWidget {
             .show_y(false)
             .show_axes(false)
             .center_y_axis(true)
-            .height(50.0)
-            .width(100.0)
+            .height(self.plot_height)
+            .width(self.plot_width)
             .allow_zoom(self.allow_zoom)
             .allow_drag(self.allow_drag)
             .allow_scroll(self.allow_scroll)
@@ -155,7 +178,7 @@ impl Widget for EQWidget {
             // })
             .center_y_axis(true)
             .default_x_bounds(min_x, max_x)
-            .default_y_bounds(-6.0, 6.0)
+            .default_y_bounds(-18.0, 18.0)
             .show(ui, |plot_ui| {
                 plot_ui.line(freq_line);
                 plot_ui.pointer_coordinate();
