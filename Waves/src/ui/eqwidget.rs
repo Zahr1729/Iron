@@ -34,7 +34,7 @@ impl EQWidget {
         }
     }
 
-    pub fn new_from_track(track: &Arc<Track>, sample_count: usize, current_sample: usize) -> Self {
+    pub fn _new_from_track(track: &Arc<Track>, sample_count: usize, current_sample: usize) -> Self {
         let data_width = sample_count;
         let sample_rate = track.sample_rate();
         let current_range = (current_sample as i32 - data_width as i32 / 2)

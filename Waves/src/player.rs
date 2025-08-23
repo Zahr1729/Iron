@@ -1,6 +1,5 @@
-use crate::audio::effects::{Gain, Output};
-use crate::common::dB;
-use crate::{audio::effects::Effect, common::track::Track};
+use crate::audio::effects::Effect;
+use crate::audio::effects::output::Output;
 
 use std::{
     sync::{Arc, mpsc},

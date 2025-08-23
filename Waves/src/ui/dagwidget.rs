@@ -25,7 +25,7 @@ impl<'a> DAGWidget<'a> {
 }
 
 impl Widget for DAGWidget<'_> {
-    fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+    fn ui(self, _ui: &mut egui::Ui) -> egui::Response {
         // Iterate over each element and place it in the ui
 
         todo!();

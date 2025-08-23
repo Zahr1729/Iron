@@ -19,7 +19,7 @@ use crate::{
 
 pub mod dagwidget;
 pub mod eqwidget;
-pub mod graph;
+pub mod nodegraph;
 pub mod playpausebutton;
 pub mod progresstracker;
 pub mod threadtracker;

@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use crate::audio::effects::{Effect, Zero};
+use crate::audio::effects::{Effect, zero::Zero};
 
 pub struct EffectDAG {
     root_index: usize,

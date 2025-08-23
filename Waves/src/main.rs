@@ -1,5 +1,4 @@
 use eframe::egui::{self, Button};
-use egui_node_graph2::Graph;
 use symphonia::core::errors::Error;
 
 use std::{
@@ -15,16 +14,12 @@ mod scene;
 mod ui;
 
 use crate::{
-    audio::{dag::EffectDAG, effects::Zero},
+    audio::{dag::EffectDAG, effects::zero::Zero},
     common::track::Track,
     player::{AudioThread, AudioUpdate},
     ui::{
-        eqwidget::EQWidget,
-        graph::{self, NodeGraph},
-        playpausebutton::PlayPauseButton,
-        progresstracker::ProgressTracker,
+        nodegraph::NodeGraph, playpausebutton::PlayPauseButton, progresstracker::ProgressTracker,
         threadtracker::ThreadTracker,
-        waveformwidget::WaveformWidget,
     },
 };
 

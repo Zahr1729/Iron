@@ -1,7 +1,7 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::audio::effects::{self, Effect, Gain};
-use crate::audio::{dag::EffectDAG, effects::Zero};
+use crate::audio::effects::{Effect, gain::Gain};
+use crate::audio::{dag::EffectDAG, effects::zero::Zero};
 use crate::common::track::Track;
 
 use serde::{Deserialize, Serialize};
@@ -71,8 +71,6 @@ impl Scene {
 #[cfg(test)]
 mod test {
     use std::{any::Any, fs::File, path::PathBuf};
-
-    use eframe::epaint::tessellator::Path;
 
     use super::*;
 
