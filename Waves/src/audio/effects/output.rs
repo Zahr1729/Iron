@@ -56,4 +56,14 @@ impl Effect for Output {
     fn name(&self) -> &str {
         "Output"
     }
+
+    fn get_waveform_plot_data(
+        &self,
+        sample_plot_data: &mut crate::common::mipmapchannel::SamplePlotData,
+        channel: &crate::common::Channel,
+    ) {
+        self.input
+            .lock()
+            .get_waveform_plot_data(sample_plot_data, channel);
+    }
 }

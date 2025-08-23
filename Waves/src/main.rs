@@ -69,6 +69,11 @@ impl MyEguiApp {
 
 impl eframe::App for MyEguiApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        let scope = tracing::trace_span!("update");
+        let _span = scope.enter();
+
+        tracing::info!(tracy.frame_mark = true);
+
         // force it to update every frame even if nothing is happening
         ctx.request_repaint();
 
@@ -176,7 +181,14 @@ impl eframe::App for MyEguiApp {
     }
 }
 
+use tracing_subscriber::layer::SubscriberExt;
+
 fn main() {
+    tracing::subscriber::set_global_default(
+        tracing_subscriber::registry().with(tracing_tracy::TracyLayer::default()),
+    )
+    .expect("setup tracy layer");
+
     // Activate drag and drop (not necessary)
     let mut options = eframe::NativeOptions::default();
     //options.viewport.

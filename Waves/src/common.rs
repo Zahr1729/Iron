@@ -1,4 +1,4 @@
-use std::f32::consts::PI;
+use std::{f32::consts::PI, thread};
 
 use num_complex::{Complex, ComplexFloat};
 
@@ -20,6 +20,7 @@ impl dB {
     }
 }
 
+#[derive(Clone, Copy)]
 pub enum Channel {
     Left,
     Right,
@@ -43,15 +44,17 @@ fn complex_fft(samples: &[Complex<f32>], frequencies: &mut [Complex<f32>], inver
     let mut s0 = Vec::with_capacity(size / 2);
     let mut s1 = Vec::with_capacity(size / 2);
 
-    let mut f0 = vec![Complex { re: 0.0, im: 0.0 }; size / 2];
-    let mut f1 = vec![Complex { re: 0.0, im: 0.0 }; size / 2];
+    let mut f = vec![Complex { re: 0.0, im: 0.0 }; size];
+
+    let (f0, f1) = f.split_at_mut(size / 2);
+
     for i in 0..size / 2 {
         s0.push(samples[2 * i]);
         s1.push(samples[2 * i + 1]);
     }
 
-    complex_fft(&s0, &mut f0, inverse);
-    complex_fft(&s1, &mut f1, inverse);
+    complex_fft(&s0, f0, inverse);
+    complex_fft(&s1, f1, inverse);
 
     // println!("{:?}", f0);
     // println!("{:?}", f1);
@@ -64,11 +67,13 @@ fn complex_fft(samples: &[Complex<f32>], frequencies: &mut [Complex<f32>], inver
 
     let mut w_i: Complex<f32> = Complex::ONE;
 
-    for i in 0..size / 2 {
-        frequencies[i] = f0[i] + w_i * f1[i];
-        frequencies[i + size / 2] = f0[i] - w_i * f1[i];
+    {
+        for i in 0..size / 2 {
+            frequencies[i] = f0[i] + w_i * f1[i];
+            frequencies[i + size / 2] = f0[i] - w_i * f1[i];
 
-        w_i *= w;
+            w_i *= w;
+        }
     }
 }
 

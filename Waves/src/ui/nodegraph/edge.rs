@@ -56,49 +56,55 @@ impl Edge {
         );
     }
 
-    fn draw_inner(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph) {
+    fn draw_inner(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph, colour: Color32) {
         //println!("{:?}", graph);
         let start = self.get_input_pos(graph);
         let end = self.get_output_pos(graph);
 
-        Edge::draw_bezier(
-            ui,
-            start,
-            end,
-            style.edge_inner_width,
-            style.edge_inner_colour,
-        );
+        Edge::draw_bezier(ui, start, end, style.edge_inner_width, colour);
     }
 
-    fn draw_start_node(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph) {
+    fn draw_start_node(
+        &self,
+        ui: &mut Ui,
+        style: &GraphStyle,
+        graph: &NodeGraph,
+        circle_colour: Color32,
+    ) {
         let node = &graph.nodes[self.input.node_index];
         node.input_node_circles[self.input.circle_index].draw(
             ui,
             style.edge_line_width,
-            style.edge_inner_colour,
+            circle_colour,
             style.edge_outer_colour,
         );
     }
 
-    fn draw_end_node(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph) {
+    fn draw_end_node(
+        &self,
+        ui: &mut Ui,
+        style: &GraphStyle,
+        graph: &NodeGraph,
+        circle_colour: Color32,
+    ) {
         let node = &graph.nodes[self.output.node_index];
         node.output_node_circles[self.output.circle_index].draw(
             ui,
             style.edge_line_width,
-            style.edge_inner_colour,
+            circle_colour,
             style.edge_outer_colour,
         );
     }
 
-    pub fn draw_edge(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph) {
+    pub fn draw_edge(&self, ui: &mut Ui, style: &GraphStyle, graph: &NodeGraph, colour: Color32) {
         // draw outer edge
         self.draw_outer(ui, style, graph);
 
         // draw nodes
-        self.draw_start_node(ui, style, graph);
-        self.draw_end_node(ui, style, graph);
+        self.draw_start_node(ui, style, graph, colour);
+        self.draw_end_node(ui, style, graph, colour);
 
         // draw inner edge
-        self.draw_inner(ui, style, graph);
+        self.draw_inner(ui, style, graph, colour);
     }
 }

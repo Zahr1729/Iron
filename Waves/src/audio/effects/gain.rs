@@ -70,19 +70,21 @@ impl Effect for Gain {
         ui.add(Slider::new(&mut self.gain.lock().0, -18.0..=6.0));
     }
 
-    fn draw_plot(
+    fn get_waveform_plot_data(
         &self,
-        ui: &mut Ui,
-        current_sample: usize,
-        sample_rate: u32,
-        plot_size: (f32, f32),
+        sample_plot_data: &mut crate::common::mipmapchannel::SamplePlotData,
+        channel: &crate::common::Channel,
     ) {
-        // do a eq diagram
-        let data_width = 1024;
-        let start_sample = (current_sample).saturating_sub((data_width) / 2);
-        let mut sample_data = std::vec![0.0; data_width];
-        self.apply(&mut sample_data, start_sample, 1);
-        let eq_widget = EQWidget::new(sample_data, sample_rate, plot_size);
-        ui.add(eq_widget);
+        self.input
+            .lock()
+            .get_waveform_plot_data(sample_plot_data, channel);
+
+        let gain = self.gain.lock().to_amplitude();
+
+        for v in &mut sample_plot_data.data {
+            for j in v {
+                *j *= gain;
+            }
+        }
     }
 }

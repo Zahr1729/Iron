@@ -3,9 +3,12 @@ use std::any::Any;
 use std::fmt::Debug;
 use std::sync::Arc;
 
+use crate::common::Channel;
+use crate::common::mipmapchannel::SamplePlotData;
 use crate::common::track::Track;
 use crate::ui::eqwidget::EQWidget;
 use crate::ui::nodegraph::GraphStyle;
+use crate::ui::waveformwidget::WaveformWidget;
 
 pub mod add;
 pub mod gain;
@@ -26,24 +29,10 @@ pub trait Effect: Send + Sync + Any {
     fn get_input_at_index(&self, index: usize) -> Result<Arc<dyn Effect>, EffectError>;
     fn name(&self) -> &str;
 
+    fn get_waveform_plot_data(&self, sample_plot_data: &mut SamplePlotData, channel: &Channel);
+
     fn data_ui(&self, _ui: &mut Ui, _style: &GraphStyle) {
         ()
-    }
-
-    fn draw_plot(
-        &self,
-        ui: &mut Ui,
-        current_sample: usize,
-        sample_rate: u32,
-        plot_size: (f32, f32),
-    ) {
-        // do a eq diagram
-        let data_width = 1024;
-        let start_sample = (current_sample).saturating_sub((data_width) / 2);
-        let mut sample_data = vec![0.0; data_width];
-        self.apply(&mut sample_data, start_sample, 1);
-        let eq_widget = EQWidget::new(sample_data, sample_rate, plot_size);
-        ui.add(eq_widget);
     }
 }
 
@@ -90,6 +79,24 @@ impl Effect for Track {
     fn name(&self) -> &str {
         "Track"
     }
+
+    fn get_waveform_plot_data(&self, sample_plot_data: &mut SamplePlotData, channel: &Channel) {
+        let scope = tracing::trace_span!("track.get_plot_data");
+        let _span = scope.enter();
+
+        match channel {
+            Channel::Left => self
+                .file_data_left()
+                .get_presampled_data_from_step_and_start(sample_plot_data),
+            Channel::Right => self
+                .file_data_right()
+                .get_presampled_data_from_step_and_start(sample_plot_data),
+        };
+
+        //println!("{:?}", sample_plot_data);
+    }
+
+    // For the track we want to render the waveform its
 
     // fn draw(&self, ui: &mut Ui, start_sample: usize, sample_rate: u32) {
     //     let binding = Arc::new(self.clone());

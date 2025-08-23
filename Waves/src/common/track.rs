@@ -5,7 +5,7 @@ use symphonia::core::codecs::CodecParameters;
 
 use crate::common::mipmapchannel::MipMapChannel;
 
-#[derive(Default, Clone)]
+#[derive(Default)]
 pub struct Track {
     file_path: Option<PathBuf>,
     file_codec_parameters: CodecParameters,

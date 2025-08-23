@@ -70,7 +70,12 @@ impl EQWidget {
     }
 
     fn get_freq_line(&self) -> Line<'_> {
-        let freq_data = common::fft(&self.sample_data);
+        let freq_data;
+        {
+            let scope = tracing::trace_span!("fft_draw");
+            let _span = scope.enter();
+            freq_data = common::fft(&self.sample_data);
+        }
 
         //println!("{:?} {}", freq_data, freq_data.len());
 
@@ -101,6 +106,8 @@ impl EQWidget {
 
 impl Widget for EQWidget {
     fn ui(self, ui: &mut egui::Ui) -> egui::Response {
+        let scope = tracing::trace_span!("drawing_freq_plot");
+        let _span = scope.enter();
         // Get the frequency data from the sample data, and have it centred on the current sample
         // If the data does not fully cover then assume it is zero.
 

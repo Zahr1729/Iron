@@ -78,6 +78,7 @@ impl NodeCircle {
         ui: &mut Ui,
         style: &GraphStyle,
         parent_index: usize,
+        is_connected: bool,
     ) -> InnerResponse<Option<Arc<NodeCircleIdentifier>>> {
         // First do logic and draw bezier underneath
 
@@ -109,7 +110,7 @@ impl NodeCircle {
                     self.draw(
                         ui,
                         style.edge_line_width,
-                        style.edge_drag_colour,
+                        style.drag_colour,
                         style.line_colour,
                     );
 
@@ -119,25 +120,30 @@ impl NodeCircle {
                         mouse_pos,
                         self.radius,
                         style.edge_line_width,
-                        style.edge_drag_colour,
+                        style.drag_colour,
                         style.line_colour,
                     );
 
                     // Draw the internal bezier so it looks nice
-                    Edge::draw_bezier(ui, self.pos, mouse_pos, self.radius, style.edge_drag_colour);
+                    Edge::draw_bezier(ui, self.pos, mouse_pos, self.radius, style.drag_colour);
                 }
                 _ => (),
             }
 
             // So we don't draw circle again
         } else {
+            let colour = match is_connected {
+                true => style.connected_colour,
+                false => style.disconnected_colour,
+            };
+
             // Just draw circle
             draw_circle(
                 ui,
                 self.pos,
                 self.radius,
                 style.node_line_width,
-                style.circle_colour,
+                colour,
                 style.line_colour,
             );
         }

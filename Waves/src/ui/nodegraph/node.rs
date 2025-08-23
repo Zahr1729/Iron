@@ -1,22 +1,77 @@
 use std::sync::Arc;
 
 use eframe::egui::{
-    self, Grid, InnerResponse, Label, Pos2, Rect, Response, RichText, Stroke, Ui, Vec2,
+    self, Grid, InnerResponse, Label, Pos2, RadioButton, Rect, Response, RichText, Stroke, Ui, Vec2,
 };
 
 use crate::{
     audio::effects::Effect,
-    ui::nodegraph::{
-        GraphAudioData, GraphStyle,
-        nodecircle::{NodeCircle, NodeCircleIdentifier},
+    ui::{
+        eqwidget::EQWidget,
+        nodegraph::{
+            GraphAudioData, GraphStyle,
+            nodecircle::{NodeCircle, NodeCircleIdentifier},
+        },
+        waveformwidget::WaveformWidget,
     },
 };
+
+#[derive(PartialEq, Debug, Clone)]
+pub enum PlotChoice {
+    Wave,
+    Eq,
+    Other,
+    None,
+}
+
+pub fn draw_freq_plot(
+    effect: Arc<dyn Effect>,
+    ui: &mut Ui,
+    current_sample: usize,
+    sample_rate: u32,
+    plot_size: (f32, f32),
+) {
+    let scope = tracing::trace_span!("freq_plot");
+    let _span = scope.enter();
+
+    // do a eq diagram
+    let data_width = 256;
+    let start_sample = (current_sample).saturating_sub((data_width) / 2);
+    let mut sample_data = vec![0.0; data_width];
+    {
+        let scope = tracing::trace_span!("getting data");
+        let _span = scope.enter();
+
+        effect.apply(&mut sample_data, start_sample, 1);
+    }
+
+    let eq_widget = EQWidget::new(sample_data, sample_rate, plot_size);
+    ui.add(eq_widget);
+}
+
+pub fn draw_waveform_plot(
+    effect: Arc<dyn Effect>,
+    ui: &mut Ui,
+    current_sample: usize,
+    sample_rate: u32,
+    plot_size: (f32, f32),
+) {
+    let scope = tracing::trace_span!("drawing_waveform_plot");
+    let _span = scope.enter();
+
+    // do a waveform diagram
+    let waveform_widget = WaveformWidget::new(current_sample, plot_size, None);
+    waveform_widget.ui(ui, effect, false);
+}
 
 #[derive(Clone)]
 pub struct Node {
     index: usize,
 
     effect: Arc<dyn Effect>,
+
+    plot_choice: PlotChoice,
+    is_connected_to_output: bool,
 
     pub input_node_circles: Vec<NodeCircle>,
     pub output_node_circles: Vec<NodeCircle>,
@@ -37,6 +92,9 @@ impl Node {
                 .collect::<Vec<_>>(),
 
             effect,
+
+            plot_choice: PlotChoice::None,
+            is_connected_to_output: false,
         }
     }
 
@@ -142,18 +200,64 @@ impl Node {
 
                 // implement node specific data ie gain value
                 self.effect.data_ui(ui, style);
+
+                // Want a drop down for both of these plots
+                egui::ComboBox::from_label("")
+                    .selected_text(format!("{:?}", self.plot_choice))
+                    .show_ui(ui, |ui| {
+                        ui.selectable_value(&mut self.plot_choice, PlotChoice::Wave, "Wave");
+                        ui.selectable_value(&mut self.plot_choice, PlotChoice::Eq, "EQ");
+                        ui.selectable_value(&mut self.plot_choice, PlotChoice::Other, "Other");
+                        ui.selectable_value(&mut self.plot_choice, PlotChoice::None, "None");
+                    });
             });
+
+        if self.plot_choice == PlotChoice::None {
+            return;
+        }
 
         egui::frame::Frame::new()
             .inner_margin(style.plot_margin)
             .show(ui, |ui| {
-                // Now lets draw the effect
-                self.effect.draw_plot(
-                    ui,
-                    audio_data.current_sample,
-                    audio_data.sample_rate,
-                    (style.plot_width, style.plot_height),
+                let scope = tracing::trace_span!(
+                    "drawing_plots",
+                    index = self.index,
+                    name = self.effect.name()
                 );
+                let _span = scope.enter();
+
+                let plot_width = ui.available_width();
+                let plot_height = plot_width / 2.0;
+
+                // Now lets draw the waveform
+                if self.plot_choice == PlotChoice::Wave {
+                    draw_waveform_plot(
+                        self.effect.clone(),
+                        ui,
+                        audio_data.current_sample,
+                        audio_data.sample_rate,
+                        (plot_width, plot_height),
+                    );
+                }
+
+                //ui.separator();
+
+                // Draw frequency diagram
+                if self.plot_choice == PlotChoice::Eq {
+                    draw_freq_plot(
+                        self.effect.clone(),
+                        ui,
+                        audio_data.current_sample,
+                        audio_data.sample_rate,
+                        (plot_width, plot_height),
+                    );
+                }
+                ui.separator();
+
+                // Draw custom plot
+                if self.plot_choice == PlotChoice::Other {
+                    ui.label("lol");
+                }
             });
     }
 
@@ -248,14 +352,14 @@ impl Node {
                     self.input_node_circles[circle_index].pos = pos;
                     // do the ui
                     self.input_node_circles[circle_index]
-                        .node_circle_ui(ui, style, self.index)
+                        .node_circle_ui(ui, style, self.index, self.is_connected_to_output)
                         .inner
                 }
                 false => {
                     self.output_node_circles[circle_index].pos = pos;
                     // do the ui
                     self.output_node_circles[circle_index]
-                        .node_circle_ui(ui, style, self.index)
+                        .node_circle_ui(ui, style, self.index, self.is_connected_to_output)
                         .inner
                 }
             };
@@ -336,6 +440,9 @@ impl Node {
         style: &GraphStyle,
         audio_data: &GraphAudioData,
     ) -> InnerResponse<Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)>> {
+        let scope = tracing::trace_span!("node_ui", index = self.index);
+        let _span = scope.enter();
+
         let mut new_edge_data = None;
         let resp = egui::Area::new(egui::Id::new(format!("graph_node {}", self.index)))
             .show(ui.ctx(), |ui| {
@@ -364,5 +471,13 @@ impl Node {
 
     pub fn index(&self) -> usize {
         self.index
+    }
+
+    pub fn set_is_connected_to_output(&mut self, is_connected_to_output: bool) {
+        self.is_connected_to_output = is_connected_to_output;
+    }
+
+    pub fn is_connected_to_output(&self) -> bool {
+        self.is_connected_to_output
     }
 }

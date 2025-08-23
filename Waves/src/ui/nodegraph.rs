@@ -48,9 +48,10 @@ pub struct GraphStyle {
 
     edge_inner_colour: Color32,
     edge_outer_colour: Color32,
-    edge_drag_colour: Color32,
+    drag_colour: Color32,
 
-    circle_colour: Color32,
+    connected_colour: Color32,
+    disconnected_colour: Color32,
     line_colour: Color32,
 
     corner_radius: f32,
@@ -82,28 +83,29 @@ impl Default for GraphStyle {
             edge_inner_width: 6.0,
             edge_line_width: 2.0,
 
-            edge_inner_colour: Color32::from_rgb(13, 116, 15),
+            edge_inner_colour: Color32::RED,
             edge_outer_colour: Color32::from_rgb(200, 200, 200),
-            edge_drag_colour: Color32::from_rgb(194, 136, 11),
-            // rgba(194, 136, 11, 1)
-            circle_colour: Color32::BLUE,
+            drag_colour: Color32::from_rgb(194, 136, 11),
+            // rgba(186, 79, 13, 1)
+            connected_colour: Color32::from_rgb(13, 116, 15), // Green
+            disconnected_colour: Color32::from_rgb(186, 79, 13),
             line_colour: Color32::from_rgb(200, 200, 200),
 
-            corner_radius: 10.0,
+            corner_radius: 8.0,
             margin: 10.0,
-            plot_margin: 5.0,
+            plot_margin: 0.0,
 
             plot_height: 75.0,
             plot_width: 150.0,
 
-            header_height: 40.0,
+            header_height: 48.0,
             header_text_size: 20.0,
 
             header_colour: Color32::from_rgb(50, 50, 50),
             header_text_colour: Color32::from_rgb(220, 220, 220),
 
-            main_text_size: 18.0,
-            grid_row_height: 18.0,
+            main_text_size: 16.0,
+            grid_row_height: 16.0,
 
             main_colour: Color32::DARK_GRAY,
             main_text_colour: Color32::from_rgb(200, 200, 200),
@@ -158,6 +160,7 @@ impl NodeGraph {
         s.add_node(s2);
         s.add_node(a1);
 
+        s.set_node_connection_status();
         s
     }
 
@@ -200,6 +203,9 @@ impl NodeGraph {
             self.nodes[output.node_index].effect().clone(),
         );
         //self.edges.push(Edge::new(input, output));
+
+        // Now just recalculate the connected
+        self.set_node_connection_status();
     }
 
     fn get_node_circle_pos(&self, identifier: NodeCircleIdentifier) -> Pos2 {
@@ -271,11 +277,40 @@ impl NodeGraph {
         !b
     }
 
+    /// DFS turns is_connected to true and then does the same for all children
+    fn iterate_node_connection_status(&mut self, index: usize) {
+        //println!("{_index}");
+        self.nodes[index].set_is_connected_to_output(true);
+
+        for i in 0..self.nodes[index].effect().input_count() {
+            let child = self.nodes[index].effect().get_input_at_index(i).unwrap();
+
+            // use the hash map to get the next index
+            let wrapper = ArcWrapper(child);
+            let child_index = self.hash.get(&wrapper).unwrap_or(&0);
+            self.iterate_node_connection_status(*child_index);
+        }
+    }
+
+    /// Sets every node is_connected to if it is upstream of output
+    fn set_node_connection_status(&mut self) {
+        // Reset so all disconnected
+        for nodes in &mut self.nodes {
+            nodes.set_is_connected_to_output(false);
+        }
+
+        // Start from output (ie index zero and iterate)
+        self.iterate_node_connection_status(1);
+    }
+
     fn get_node_index_from_effect(&self, effect: Arc<dyn Effect>) -> Option<&usize> {
         self.hash.get(&ArcWrapper(effect))
     }
 
     pub fn node_graph_ui(&mut self, ui: &mut eframe::egui::Ui) -> Response {
+        let scope = tracing::trace_span!("node_graph_ui");
+        let _span = scope.enter();
+
         // let mut area = area.begin(ctx);
 
         // do node ui and find if we need a new edge
@@ -351,7 +386,12 @@ impl NodeGraph {
                             },
                         );
 
-                        edge.draw_edge(ui, &self.style, self);
+                        let colour = match node.is_connected_to_output() {
+                            true => self.style.connected_colour,
+                            false => self.style.disconnected_colour,
+                        };
+
+                        edge.draw_edge(ui, &self.style, self, colour);
                     }
                 }
             }
