@@ -38,19 +38,30 @@ impl WaveformWidget {
         }
     }
 
+    fn get_start_sample(&self, data_width: usize, step: usize) -> usize {
+        let sample_count: usize = 44000 * 30;
+        // Get where start should be considering lower
+        let lower = self.current_sample.saturating_sub((data_width / 2) * step);
+
+        // Get where start should be considering higher
+        let upper = self
+            .current_sample
+            .min(sample_count.saturating_sub(data_width * step));
+
+        lower.min(upper)
+    }
+
     pub fn compute_line_data_from_effect(
         &self,
         effect: &Arc<dyn Effect>,
         samp_rate: f64,
+        data_width: usize,
+        step: usize,
         channel: Channel,
     ) -> Vec<egui_plot::Line<'_>> {
         const FILLED_LIMIT: usize = 32;
 
-        // deal with say 512 datapoints want to get some step size and the data back
-        let step = 2048;
-        let data_width = 256;
-
-        let start_sample = self.current_sample.saturating_sub(data_width / 2);
+        let start_sample = self.get_start_sample(data_width, step);
 
         let mut sample_plot_data = SamplePlotData::new(step, start_sample, data_width);
 
@@ -154,20 +165,45 @@ impl WaveformWidget {
         let samp_rate = 48000.0;
         let time_per_sample = 1.0 / samp_rate;
 
-        // Do Left
+        // deal with say 512 datapoints want to get some step size and the data back
+        let step = 2048;
+        let data_width = 256;
 
-        let line_left = self.compute_line_data_from_effect(&effect, samp_rate, Channel::Left);
-        let line_right = self.compute_line_data_from_effect(&effect, samp_rate, Channel::Right);
+        let line_left =
+            self.compute_line_data_from_effect(&effect, samp_rate, data_width, step, Channel::Left);
+        let line_right = self.compute_line_data_from_effect(
+            &effect,
+            samp_rate,
+            data_width,
+            step,
+            Channel::Right,
+        );
 
-        // Draw the timestamp line
-        let line_time = egui_plot::Line::new(
-            "time",
-            vec![
-                [self.current_sample as f64 * time_per_sample, 1.0],
-                [self.current_sample as f64 * time_per_sample, -1.0],
-            ],
-        )
-        .color(egui::Color32::WHITE);
+        let start_sample = self.get_start_sample(data_width, step);
+        let max_difference = step * data_width;
+
+        println!("{:?}, {:?}", start_sample, self.current_sample);
+
+        // Draw the timestamp line if its relevant
+        let mut line_time = None;
+        if (0..=max_difference).contains(&(self.current_sample - start_sample)) {
+            line_time = Some(
+                egui_plot::Line::new(
+                    "time",
+                    vec![
+                        [
+                            (self.current_sample - start_sample) as f64 * time_per_sample,
+                            1.0,
+                        ],
+                        [
+                            (self.current_sample - start_sample) as f64 * time_per_sample,
+                            -1.0,
+                        ],
+                    ],
+                )
+                .color(egui::Color32::WHITE),
+            );
+        };
 
         let plt = egui_plot::Plot::new("waveform")
             .legend(egui_plot::Legend::default())
@@ -192,7 +228,10 @@ impl WaveformWidget {
                     plot_ui.line(l);
                 }
                 if show_current_sample {
-                    plot_ui.line(line_time);
+                    match line_time {
+                        None => (),
+                        Some(line_time) => plot_ui.line(line_time),
+                    };
                 }
 
                 plot_ui.pointer_coordinate()

@@ -24,7 +24,7 @@ impl MipMapChannel {
         let mut pyramid_data = vec![data];
         let mut max_pyramid = pyramid_data.clone();
         let mut min_pyramid = pyramid_data.clone();
-        while size > 1000 {
+        while size > 1 {
             // Fix up a better comparison at some point
             let normal = MipMapChannel::resample_data_with_comparison(
                 pyramid_data[i].clone(),
@@ -100,6 +100,8 @@ impl MipMapChannel {
 
         let n = 63 - sample_plot_data.step.leading_zeros() as usize;
         let pyramid_height = self.pyramid_data.len();
+
+        //println!("{n}, {pyramid_height}");
 
         sample_plot_data.is_min_max = n >= self.cutoff_index;
 

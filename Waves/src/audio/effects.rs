@@ -84,6 +84,8 @@ impl Effect for Track {
         let scope = tracing::trace_span!("track.get_plot_data");
         let _span = scope.enter();
 
+        //println!("{sample_plot_data:?}");
+
         match channel {
             Channel::Left => self
                 .file_data_left()

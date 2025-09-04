@@ -148,12 +148,16 @@ impl NodeCircle {
             );
         }
 
-        let return_value;
+        let payload;
 
-        let payload = r.dnd_release_payload::<NodeCircleIdentifier>();
-        return_value = InnerResponse::new(payload, r);
+        if r.drag_started() {
+            println!("OH YEAH BABY");
+            payload = Some(Arc::new(NodeCircleIdentifier::new(0, 0, false)));
+        } else {
+            payload = r.dnd_release_payload::<NodeCircleIdentifier>();
+        }
 
-        return_value
+        InnerResponse::new(payload, r)
     }
 
     pub fn draw(

@@ -329,6 +329,11 @@ impl NodeGraph {
             i = i.or(inner_resp.inner);
         }
 
+        match i.clone() {
+            None => (),
+            Some(j) => println!("{j:?}"),
+        }
+
         match i {
             None => (),
             Some((input, output)) => {

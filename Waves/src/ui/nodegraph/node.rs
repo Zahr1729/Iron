@@ -61,7 +61,7 @@ pub fn draw_waveform_plot(
 
     // do a waveform diagram
     let waveform_widget = WaveformWidget::new(current_sample, plot_size, None);
-    waveform_widget.ui(ui, effect, false);
+    waveform_widget.ui(ui, effect, true);
 }
 
 #[derive(Clone)]
@@ -349,11 +349,20 @@ impl Node {
 
             let other_data = match is_input {
                 true => {
+                    // Importantly in the case where the circle is an input circle (ie on the left)
+                    // Then we want to immediately overwrite if dragging just begun
                     self.input_node_circles[circle_index].pos = pos;
                     // do the ui
-                    self.input_node_circles[circle_index]
-                        .node_circle_ui(ui, style, self.index, self.is_connected_to_output)
-                        .inner
+                    let inner_response = self.input_node_circles[circle_index].node_circle_ui(
+                        ui,
+                        style,
+                        self.index,
+                        self.is_connected_to_output,
+                    );
+
+                    // If we start the drag then just send back zero.
+
+                    inner_response.inner
                 }
                 false => {
                     self.output_node_circles[circle_index].pos = pos;
