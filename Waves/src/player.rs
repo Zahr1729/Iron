@@ -12,14 +12,13 @@ use cpal::{
 };
 
 /// It is very important that StopAt takes in the position of the cursor as the value is not known by this thread
-#[derive(Debug)]
 pub enum AudioCommand {
     /// Perhaps later change Track to something that is "playable", with "playable" meaning that it can find a "next_sample"
-    PlayFrom(Arc<Output>, usize),
+    PlayFrom(Arc<dyn Effect>, usize),
     /// We need the argument for where the pointer is right now
     Stop,
     /// This is specifically for moving the cursor and continues with what it was doing before!
-    RelocateTo(Arc<Output>, usize),
+    RelocateTo(Arc<dyn Effect>, usize),
 }
 
 /// This we want to send back (if anything at all)
@@ -35,7 +34,7 @@ pub struct AudioThread {
 
 fn get_stream_from_sample(
     output_device: Device,
-    output: Arc<Output>,
+    output: Arc<dyn Effect>,
     start_point: usize,
     tx: mpsc::Sender<AudioUpdate>,
 ) -> Stream {

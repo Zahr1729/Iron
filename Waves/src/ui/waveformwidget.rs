@@ -1,5 +1,5 @@
 use crate::{
-    audio::effects::Effect,
+    audio::effects::{Effect, output::Output},
     common::{Channel, mipmapchannel::SamplePlotData, track::Track},
     player::AudioCommand,
 };
@@ -19,6 +19,7 @@ pub struct WaveformWidget {
     allow_zoom: egui::Vec2b,
     allow_drag: egui::Vec2b,
     allow_scroll: egui::Vec2b,
+    is_small_widget: bool,
     tx_commands: Option<Sender<AudioCommand>>,
 }
 
@@ -27,17 +28,32 @@ impl WaveformWidget {
         current_sample: usize,
         effect: Arc<dyn Effect>,
         plot_size: (f32, f32),
+        interactable: bool,
         tx_commands: Option<Sender<AudioCommand>>,
     ) -> Self {
-        Self {
-            current_sample,
-            effect,
-            _vertical: true,
-            plot_size,
-            allow_zoom: [true, false].into(),
-            allow_drag: [true, false].into(),
-            allow_scroll: [true, false].into(),
-            tx_commands,
+        match interactable {
+            false => Self {
+                current_sample,
+                effect,
+                _vertical: true,
+                plot_size,
+                allow_zoom: false.into(),
+                allow_drag: false.into(),
+                allow_scroll: false.into(),
+                is_small_widget: true,
+                tx_commands,
+            },
+            true => Self {
+                current_sample,
+                effect,
+                _vertical: true,
+                plot_size,
+                allow_zoom: [true, false].into(),
+                allow_drag: [true, false].into(),
+                allow_scroll: [true, false].into(),
+                is_small_widget: false,
+                tx_commands,
+            },
         }
     }
 
@@ -153,18 +169,19 @@ impl WaveformWidget {
 
         line_data
     }
-}
 
-impl WaveformWidget {
-    pub fn ui(mut self, ui: &mut egui::Ui, show_current_sample: bool) -> egui::Response {
-        let plot_id = ui.id();
-
-        let samp_rate = 48000.0;
+    fn get_small_line_data(
+        &self,
+        samp_rate: f64,
+        data_width: usize,
+        step: usize,
+    ) -> (
+        Vec<egui_plot::Line<'_>>,
+        Vec<egui_plot::Line<'_>>,
+        Option<egui_plot::Line<'_>>,
+    ) {
         let time_per_sample = 1.0 / samp_rate;
-
         // deal with say 512 datapoints want to get some step size and the data back
-        let step = 2048;
-        let data_width = 256;
 
         let line_left =
             self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Left);
@@ -193,6 +210,70 @@ impl WaveformWidget {
                 )
                 .color(egui::Color32::WHITE),
             );
+        };
+
+        (line_left, line_right, line_time)
+    }
+
+    fn get_big_line_data(
+        &self,
+        range: RangeInclusive<f64>,
+        samp_rate: f64,
+        data_width: usize,
+    ) -> (
+        Vec<egui_plot::Line<'_>>,
+        Vec<egui_plot::Line<'_>>,
+        Option<egui_plot::Line<'_>>,
+    ) {
+        let time_per_sample = 1.0 / samp_rate;
+        // deal with say 512 datapoints want to get some step size and the data back
+        let exact_step = samp_rate * (range.end() - range.start()) / data_width as f64;
+        let log = exact_step.log2().floor();
+        let step = ((2.0f64).powf(log) as usize);
+
+        // Do Left
+
+        let line_left =
+            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Left);
+        let line_right =
+            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Right);
+
+        // Draw the timestamp line
+        let line_time = egui_plot::Line::new(
+            "time",
+            vec![
+                [self.current_sample as f64 * time_per_sample, 1.0],
+                [self.current_sample as f64 * time_per_sample, -1.0],
+            ],
+        )
+        .color(egui::Color32::WHITE);
+
+        (line_left, line_right, Some(line_time))
+    }
+}
+
+impl WaveformWidget {
+    pub fn ui(mut self, ui: &mut egui::Ui, show_current_sample: bool) -> egui::Response {
+        let plot_id = ui.id();
+
+        let samp_rate = 48000.0;
+        let time_span = 20.0 * 60.0;
+
+        let (line_left, line_right, line_time) = match self.is_small_widget {
+            true => self.get_small_line_data(samp_rate, 256, 2048),
+            false => {
+                // Initialise data eg getting start stop times and step size
+                let range =
+                    if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), plot_id) {
+                        let r = plot_memory.bounds().range_x();
+                        let three_samples = 3.0 / samp_rate;
+                        (r.start() - three_samples).clamp(0.0, time_span * samp_rate)
+                            ..=(r.end() + three_samples).clamp(0.0, time_span * samp_rate)
+                    } else {
+                        0.02f64..=1000.0f64
+                    };
+                self.get_big_line_data(range, samp_rate, 1024)
+            }
         };
 
         let plt = egui_plot::Plot::new("waveform")
@@ -235,9 +316,9 @@ impl WaveformWidget {
                 match self.tx_commands {
                     None => (),
                     Some(tx_commands) => {
-                        // tx_commands
-                        //     .send(AudioCommand::RelocateTo(self.effect.clone(), x_sample))
-                        //     .expect("Can't reset time");
+                        tx_commands
+                            .send(AudioCommand::RelocateTo(self.effect.clone(), x_sample))
+                            .expect("Can't reset time");
                     }
                 }
 

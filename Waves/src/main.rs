@@ -19,7 +19,7 @@ use crate::{
     player::{AudioThread, AudioUpdate},
     ui::{
         nodegraph::NodeGraph, playpausebutton::PlayPauseButton, progresstracker::ProgressTracker,
-        threadtracker::ThreadTracker,
+        threadtracker::ThreadTracker, waveformwidget::WaveformWidget,
     },
 };
 
@@ -146,6 +146,17 @@ impl eframe::App for MyEguiApp {
                     }
                 });
             });
+
+            // Have the waveform
+            let main_waveform = WaveformWidget::new(
+                self.current_sample,
+                self.node_graph.output.clone(),
+                (500.0, 200.0),
+                true,
+                Some(self.audio_thread.commands.clone()),
+            );
+
+            main_waveform.ui(ui, true);
 
             // Iterate through all progress bars and display on the bottom of the screen
 
