@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 cpal = "0.16.0"
 eframe = "0.32.0"
+egui_extras = { version = "0.32.2", features = ["svg"] }
 egui_node_graph2 = "0.7.0"
 egui_plot = "0.33.0"
 num-complex = "0.4.6"

@@ -1,4 +1,4 @@
-use eframe::egui::{self, Response, Widget};
+use eframe::egui::{self, Image, Response, Widget};
 
 pub struct PlayPauseButton {
     is_paused: bool,
@@ -19,8 +19,16 @@ impl PlayPauseButton {
 impl Widget for PlayPauseButton {
     fn ui(self, ui: &mut egui::Ui) -> Response {
         let button = match self.is_paused {
-            true => ui.button(self.play_text),
-            false => ui.button(self.pause_text),
+            true => {
+                let play_button =
+                    Image::new(egui::include_image!(r"../..\svg\play-svgrepo-com.svg"));
+                ui.button(play_button)
+            }
+            false => {
+                let pause_button =
+                    Image::new(egui::include_image!("../../svg/pause-svgrepo-com.svg"));
+                ui.button(pause_button)
+            }
         };
 
         button

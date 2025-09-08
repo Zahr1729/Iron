@@ -13,6 +13,7 @@ use std::{
 /// We will want some apply_sampled_data function like apply in each effect to be able to run (and also use the mipmap functionaility)
 pub struct WaveformWidget {
     current_sample: usize,
+    effect: Arc<dyn Effect>,
     plot_size: (f32, f32),
     _vertical: bool,
     allow_zoom: egui::Vec2b,
@@ -24,11 +25,13 @@ pub struct WaveformWidget {
 impl WaveformWidget {
     pub fn new(
         current_sample: usize,
+        effect: Arc<dyn Effect>,
         plot_size: (f32, f32),
         tx_commands: Option<Sender<AudioCommand>>,
     ) -> Self {
         Self {
             current_sample,
+            effect,
             _vertical: true,
             plot_size,
             allow_zoom: [true, false].into(),
@@ -39,7 +42,8 @@ impl WaveformWidget {
     }
 
     fn get_start_sample(&self, data_width: usize, step: usize) -> usize {
-        let sample_count: usize = 44000 * 30;
+        // Max 100 minutes
+        let sample_count: usize = 48000 * 72 * 60;
         // Get where start should be considering lower
         let lower = self.current_sample.saturating_sub((data_width / 2) * step);
 
@@ -53,7 +57,6 @@ impl WaveformWidget {
 
     pub fn compute_line_data_from_effect(
         &self,
-        effect: &Arc<dyn Effect>,
         samp_rate: f64,
         data_width: usize,
         step: usize,
@@ -66,7 +69,8 @@ impl WaveformWidget {
         let mut sample_plot_data = SamplePlotData::new(step, start_sample, data_width);
 
         // do the maths to get the plot data back
-        effect.get_waveform_plot_data(&mut sample_plot_data, &channel);
+        self.effect
+            .get_waveform_plot_data(&mut sample_plot_data, &channel);
 
         let offset_func = match channel {
             Channel::Left => |f: f64| f / 2.0 + 0.5,
@@ -85,8 +89,6 @@ impl WaveformWidget {
         let time_per_sample = 1.0 / samp_rate;
 
         let range = 0.0..=(data_width as f64 * step as f64 * time_per_sample);
-
-        //println!("{:?}", data);
 
         let line_data: Vec<egui_plot::Line<'_>> = match data.len() {
             1 => {
@@ -154,12 +156,7 @@ impl WaveformWidget {
 }
 
 impl WaveformWidget {
-    pub fn ui(
-        mut self,
-        ui: &mut egui::Ui,
-        effect: Arc<dyn Effect>,
-        show_current_sample: bool,
-    ) -> egui::Response {
+    pub fn ui(mut self, ui: &mut egui::Ui, show_current_sample: bool) -> egui::Response {
         let plot_id = ui.id();
 
         let samp_rate = 48000.0;
@@ -170,19 +167,12 @@ impl WaveformWidget {
         let data_width = 256;
 
         let line_left =
-            self.compute_line_data_from_effect(&effect, samp_rate, data_width, step, Channel::Left);
-        let line_right = self.compute_line_data_from_effect(
-            &effect,
-            samp_rate,
-            data_width,
-            step,
-            Channel::Right,
-        );
+            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Left);
+        let line_right =
+            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Right);
 
         let start_sample = self.get_start_sample(data_width, step);
         let max_difference = step * data_width;
-
-        println!("{:?}, {:?}", start_sample, self.current_sample);
 
         // Draw the timestamp line if its relevant
         let mut line_time = None;

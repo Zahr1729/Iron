@@ -1,4 +1,4 @@
-use eframe::egui::{self, Button};
+use eframe::egui::{self, Button, Color32, Image, Pos2, Rect};
 use symphonia::core::errors::Error;
 
 use std::{
@@ -31,6 +31,7 @@ struct MyEguiApp {
     rx_loader: mpsc::Receiver<Track>,
     audio_thread: player::AudioThread,
     current_sample: usize,
+    sample_rate: usize,
     is_paused: bool,
     // Must store
     // - widget
@@ -41,7 +42,7 @@ struct MyEguiApp {
 }
 
 impl MyEguiApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(cc: &eframe::CreationContext<'_>) -> Self {
         // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
         // Restore app state using cc.storage (requires the "persistence" feature).
         // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
@@ -58,8 +59,11 @@ impl MyEguiApp {
             audio_thread: AudioThread::new(),
             ops_in_progress: Default::default(),
             current_sample: 0,
+            sample_rate: 48000,
             is_paused: true,
         };
+
+        egui_extras::install_image_loaders(&cc.egui_ctx);
 
         s.node_graph.audio_data.sample_rate = 48000;
 
@@ -79,6 +83,70 @@ impl eframe::App for MyEguiApp {
 
         // Bottom Panel
         egui::TopBottomPanel::bottom("status").show(ctx, |ui| {
+            ui.vertical_centered(|ui| {
+                // iterate through the relevant buttons.
+
+                ui.horizontal(|ui| {
+                    // Return to zero
+                    let return_to_zero_button = Image::new(egui::include_image!(
+                        r"..\svg\skip-previous-svgrepo-com.svg"
+                    ));
+                    if ui.button(return_to_zero_button).clicked() {
+                        self.current_sample = 0;
+                        self.audio_thread
+                            .send_command(player::AudioCommand::RelocateTo(
+                                self.node_graph.output.clone(),
+                                self.current_sample,
+                            ));
+                    }
+
+                    // Rewind 5 seconds
+                    let rewind_button = Image::new(egui::include_image!(
+                        r"..\svg\rewind-5-seconds-back-svgrepo-com.svg"
+                    ));
+                    if ui.button(rewind_button).clicked() {
+                        self.current_sample =
+                            self.current_sample.saturating_sub(self.sample_rate * 5);
+                        self.audio_thread
+                            .send_command(player::AudioCommand::RelocateTo(
+                                self.node_graph.output.clone(),
+                                self.current_sample,
+                            ));
+                    }
+
+                    // Perhaps group this all inside playpausebutton
+                    let play_pause_button = PlayPauseButton::new(self.is_paused);
+                    let response = ui.add(play_pause_button);
+                    if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
+                        match self.is_paused {
+                            true => self
+                                .audio_thread
+                                .send_command(player::AudioCommand::PlayFrom(
+                                    self.node_graph.output.clone(),
+                                    self.current_sample,
+                                )),
+                            false => self.audio_thread.send_command(player::AudioCommand::Stop),
+                        }
+                        self.is_paused = !self.is_paused;
+                    }
+
+                    // Fast Forward
+                    let fast_forward_button = Image::new(egui::include_image!(
+                        r"..\svg\rewind-forward-svgrepo-com.svg"
+                    ))
+                    .tint(Color32::BLACK);
+                    if ui.button(fast_forward_button).clicked() {
+                        self.current_sample =
+                            self.current_sample.saturating_add(self.sample_rate * 5);
+                        self.audio_thread
+                            .send_command(player::AudioCommand::RelocateTo(
+                                self.node_graph.output.clone(),
+                                self.current_sample,
+                            ));
+                    }
+                });
+            });
+
             // Iterate through all progress bars and display on the bottom of the screen
 
             for bar in &mut self.ops_in_progress {
@@ -125,27 +193,6 @@ impl eframe::App for MyEguiApp {
             //     let eq_widget = EQWidget::new(t, 1024, self.current_sample);
             //     ui.add(eq_widget);
             // }
-
-            // Perhaps group this all inside playpausebutton
-            let play_pause_button = PlayPauseButton::new(self.is_paused);
-            let response = ui.add(play_pause_button);
-            if response.clicked() || ui.input(|i| i.key_pressed(egui::Key::Space)) {
-                match self.is_paused {
-                    true => self
-                        .audio_thread
-                        .send_command(player::AudioCommand::PlayFrom(
-                            self.node_graph.output.clone(),
-                            self.current_sample,
-                        )),
-                    false => self.audio_thread.send_command(player::AudioCommand::Stop),
-                }
-                self.is_paused = !self.is_paused;
-            }
-
-            let resp = ui.add(Button::new("GO TO ZERO"));
-            if resp.clicked() {
-                self.current_sample = 0;
-            }
 
             // Rip the data from the file (drag and drop)
             let dropped = ctx.input(|i| i.raw.dropped_files.clone());
