@@ -7,6 +7,7 @@ use eframe::egui::{self, Widget};
 use std::{
     ops::RangeInclusive,
     sync::{Arc, mpsc::Sender},
+    time,
 };
 
 /// Want to be able to build a waveform widget that displays the waveform after applying the effect
@@ -15,6 +16,7 @@ pub struct WaveformWidget {
     current_sample: usize,
     effect: Arc<dyn Effect>,
     plot_size: (f32, f32),
+    show_grid: bool,
     _vertical: bool,
     allow_zoom: egui::Vec2b,
     allow_drag: egui::Vec2b,
@@ -29,6 +31,7 @@ impl WaveformWidget {
         effect: Arc<dyn Effect>,
         plot_size: (f32, f32),
         interactable: bool,
+        show_grid: bool,
         tx_commands: Option<Sender<AudioCommand>>,
     ) -> Self {
         match interactable {
@@ -37,6 +40,7 @@ impl WaveformWidget {
                 effect,
                 _vertical: true,
                 plot_size,
+                show_grid,
                 allow_zoom: false.into(),
                 allow_drag: false.into(),
                 allow_scroll: false.into(),
@@ -48,6 +52,7 @@ impl WaveformWidget {
                 effect,
                 _vertical: true,
                 plot_size,
+                show_grid,
                 allow_zoom: [true, false].into(),
                 allow_drag: [true, false].into(),
                 allow_scroll: [true, false].into(),
@@ -76,11 +81,11 @@ impl WaveformWidget {
         samp_rate: f64,
         data_width: usize,
         step: usize,
+        start_sample: usize,
+        plot_start: f64,
         channel: Channel,
     ) -> Vec<egui_plot::Line<'_>> {
         const FILLED_LIMIT: usize = 32;
-
-        let start_sample = self.get_start_sample(data_width, step);
 
         let mut sample_plot_data = SamplePlotData::new(step, start_sample, data_width);
 
@@ -104,7 +109,7 @@ impl WaveformWidget {
         let data = sample_plot_data.data;
         let time_per_sample = 1.0 / samp_rate;
 
-        let range = 0.0..=(data_width as f64 * step as f64 * time_per_sample);
+        let range = plot_start..=(data_width as f64 * step as f64 * time_per_sample + plot_start);
 
         let line_data: Vec<egui_plot::Line<'_>> = match data.len() {
             1 => {
@@ -183,12 +188,25 @@ impl WaveformWidget {
         let time_per_sample = 1.0 / samp_rate;
         // deal with say 512 datapoints want to get some step size and the data back
 
-        let line_left =
-            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Left);
-        let line_right =
-            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Right);
-
         let start_sample = self.get_start_sample(data_width, step);
+
+        let line_left = self.compute_line_data_from_effect(
+            samp_rate,
+            data_width,
+            step,
+            start_sample,
+            0.0,
+            Channel::Left,
+        );
+        let line_right = self.compute_line_data_from_effect(
+            samp_rate,
+            data_width,
+            step,
+            start_sample,
+            0.0,
+            Channel::Right,
+        );
+
         let max_difference = step * data_width;
 
         // Draw the timestamp line if its relevant
@@ -228,15 +246,29 @@ impl WaveformWidget {
         let time_per_sample = 1.0 / samp_rate;
         // deal with say 512 datapoints want to get some step size and the data back
         let exact_step = samp_rate * (range.end() - range.start()) / data_width as f64;
-        let log = exact_step.log2().floor();
-        let step = ((2.0f64).powf(log) as usize);
+        let log = exact_step.log2().ceil().max(0.0);
+        let step = (2.0f64).powf(log) as usize;
+
+        let start_sample = (range.start() * samp_rate) as usize;
 
         // Do Left
 
-        let line_left =
-            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Left);
-        let line_right =
-            self.compute_line_data_from_effect(samp_rate, data_width, step, Channel::Right);
+        let line_left = self.compute_line_data_from_effect(
+            samp_rate,
+            data_width,
+            step,
+            start_sample,
+            *range.start(),
+            Channel::Left,
+        );
+        let line_right = self.compute_line_data_from_effect(
+            samp_rate,
+            data_width,
+            step,
+            start_sample,
+            *range.start(),
+            Channel::Right,
+        );
 
         // Draw the timestamp line
         let line_time = egui_plot::Line::new(
@@ -257,7 +289,7 @@ impl WaveformWidget {
         let plot_id = ui.id();
 
         let samp_rate = 48000.0;
-        let time_span = 20.0 * 60.0;
+        let time_span = 2.0 * 60.0;
 
         let (line_left, line_right, line_time) = match self.is_small_widget {
             true => self.get_small_line_data(samp_rate, 256, 2048),
@@ -267,10 +299,10 @@ impl WaveformWidget {
                     if let Some(plot_memory) = egui_plot::PlotMemory::load(ui.ctx(), plot_id) {
                         let r = plot_memory.bounds().range_x();
                         let three_samples = 3.0 / samp_rate;
-                        (r.start() - three_samples).clamp(0.0, time_span * samp_rate)
-                            ..=(r.end() + three_samples).clamp(0.0, time_span * samp_rate)
+                        (r.start() - three_samples).clamp(0.0, time_span)
+                            ..=(r.end() + three_samples).clamp(0.0, time_span)
                     } else {
-                        0.02f64..=1000.0f64
+                        0.02f64..=256.0f64
                     };
                 self.get_big_line_data(range, samp_rate, 1024)
             }
@@ -286,10 +318,10 @@ impl WaveformWidget {
             .id(plot_id)
             .width(self.plot_size.0)
             .height(self.plot_size.1)
-            .show_x(false)
-            .show_y(false)
-            .show_axes(false)
-            .show_grid(false)
+            .show_x(self.show_grid)
+            .show_y(self.show_grid)
+            .show_axes(self.show_grid)
+            .show_grid(self.show_grid)
             .default_y_bounds(-1.0, 1.0)
             .show(ui, |plot_ui| {
                 for l in line_left {

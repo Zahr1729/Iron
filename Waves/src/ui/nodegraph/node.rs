@@ -60,7 +60,8 @@ pub fn draw_waveform_plot(
     let _span = scope.enter();
 
     // do a waveform diagram
-    let waveform_widget = WaveformWidget::new(current_sample, effect, plot_size, false, None);
+    let waveform_widget =
+        WaveformWidget::new(current_sample, effect, plot_size, false, false, None);
     waveform_widget.ui(ui, true);
 }
 

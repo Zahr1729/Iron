@@ -1,9 +1,14 @@
-use eframe::egui::{self, Button, Color32, Image, Pos2, Rect};
+use eframe::egui::{self, Button, Color32, Image, Pos2, Rect, Ui, mutex::Mutex};
 use symphonia::core::errors::Error;
 
 use std::{
     sync::{Arc, mpsc},
     thread,
+};
+
+use crate::{
+    audio::effects::{add::Add, sinewave::SineWave},
+    common::dB,
 };
 
 mod audio;
@@ -14,7 +19,10 @@ mod scene;
 mod ui;
 
 use crate::{
-    audio::{dag::EffectDAG, effects::zero::Zero},
+    audio::{
+        dag::EffectDAG,
+        effects::{Effect, gain::Gain, zero::Zero},
+    },
     common::track::Track,
     player::{AudioThread, AudioUpdate},
     ui::{
@@ -51,7 +59,7 @@ impl MyEguiApp {
         let (tx, rx) = mpsc::channel();
 
         let mut s = Self {
-            node_graph: NodeGraph::new_non_trivial(),
+            node_graph: NodeGraph::new(),
             effect_dag: Arc::new(EffectDAG::new(0, vec![Arc::new(Zero)])),
             tx_loader: tx,
             rx_loader: rx,
@@ -68,6 +76,12 @@ impl MyEguiApp {
         s.node_graph.audio_data.sample_rate = 48000;
 
         s
+    }
+
+    fn make_effect_button(&mut self, ui: &mut Ui, effect: Arc<dyn Effect>) {
+        if ui.button(effect.name()).clicked() {
+            self.node_graph.add_node(effect);
+        }
     }
 }
 
@@ -151,7 +165,8 @@ impl eframe::App for MyEguiApp {
             let main_waveform = WaveformWidget::new(
                 self.current_sample,
                 self.node_graph.output.clone(),
-                (500.0, 200.0),
+                (ui.available_width(), 100.0),
+                true,
                 true,
                 Some(self.audio_thread.commands.clone()),
             );
@@ -172,6 +187,25 @@ impl eframe::App for MyEguiApp {
                     ui.add(bar);
                 }
             });
+        });
+
+        egui::SidePanel::right("THE RIGHT PANEL BABY").show(ctx, |ui| {
+            // Option to instantiate any of the graph widgets
+
+            self.make_effect_button(
+                ui,
+                Arc::new(Gain::new(dB(0.0), self.node_graph.zero.clone())),
+            );
+
+            self.make_effect_button(
+                ui,
+                Arc::new(Add::new(
+                    self.node_graph.zero.clone(),
+                    self.node_graph.zero.clone(),
+                )),
+            );
+
+            self.make_effect_button(ui, Arc::new(SineWave::new(0.0, 0.0, 0.0)));
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

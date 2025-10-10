@@ -185,7 +185,7 @@ impl NodeGraph {
         self.add_node(track);
     }
 
-    fn add_node(&mut self, effect: Arc<dyn Effect>) {
+    pub fn add_node(&mut self, effect: Arc<dyn Effect>) {
         let index = self.nodes.len();
         let node = Node::new(index, effect.clone(), 6.0);
         self.hash.insert(ArcWrapper(effect), index);

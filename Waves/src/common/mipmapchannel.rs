@@ -98,7 +98,7 @@ impl MipMapChannel {
 
         let data_width = sample_plot_data.data[0].len();
 
-        let n = 63 - sample_plot_data.step.leading_zeros() as usize;
+        let mut n = 63 - sample_plot_data.step.leading_zeros() as usize;
         let pyramid_height = self.pyramid_data.len();
 
         //println!("{n}, {pyramid_height}");
@@ -107,9 +107,9 @@ impl MipMapChannel {
 
         //println!("{}", n);
 
+        // If we go above the pyramid height just work with the top layer, which definitionally will be one value.
         if n >= pyramid_height {
-            println!("NOTE log2 of step must not be greater than the pyramid height");
-            return false;
+            n = pyramid_height - 1;
         }
 
         // as we expect the data vector to have the same number of entries in each component (ie for min/max)
