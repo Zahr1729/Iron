@@ -1,7 +1,8 @@
-use std::sync::Arc;
+use std::{process::Output, sync::Arc};
 
 use eframe::egui::{
-    self, Grid, InnerResponse, Label, Pos2, RadioButton, Rect, Response, RichText, Stroke, Ui, Vec2,
+    self, Grid, Image, InnerResponse, Label, Pos2, RadioButton, Rect, Response, RichText, Stroke,
+    Ui, Vec2,
 };
 
 use crate::{
@@ -15,6 +16,10 @@ use crate::{
         waveformwidget::WaveformWidget,
     },
 };
+
+// Data for if we should remove a node
+#[derive(PartialEq, Eq, Clone, Copy)]
+pub struct RemoveNodeFlag(pub bool);
 
 #[derive(PartialEq, Debug, Clone)]
 pub enum PlotChoice {
@@ -100,7 +105,7 @@ impl Node {
     }
 
     /// This function should be called immediately
-    fn draw_header(&mut self, ui: &mut Ui, style: &GraphStyle) -> Response {
+    fn draw_header(&mut self, ui: &mut Ui, style: &GraphStyle) -> InnerResponse<RemoveNodeFlag> {
         let frame_pos = ui.next_widget_position();
 
         let header = egui::frame::Frame::new()
@@ -148,7 +153,7 @@ impl Node {
                 ui.painter().add(shape_top);
                 ui.painter().add(shape_bottom);
 
-                ui.add(
+                let resp = ui.add(
                     Label::new(
                         RichText::new(self.effect.name())
                             .heading()
@@ -161,8 +166,21 @@ impl Node {
                     )
                     .selectable(false),
                 );
+
+                // Exit button for things that aren't output
+
+                let return_to_zero_button = Image::new(egui::include_image!(
+                    "../../../svg/skip-previous-svgrepo-com.svg"
+                ));
+
+                // return true in the inner response iff we want to close
+                RemoveNodeFlag(ui.button(return_to_zero_button).clicked())
             });
-        header.response
+
+        if header.inner.0 {
+            println!("AWA\n");
+        }
+        header
     }
 
     fn draw_main(&mut self, ui: &mut Ui, style: &GraphStyle, audio_data: &GraphAudioData) {
@@ -267,7 +285,7 @@ impl Node {
         ui: &mut Ui,
         style: &GraphStyle,
         audio_data: &GraphAudioData,
-    ) {
+    ) -> InnerResponse<RemoveNodeFlag> {
         egui::frame::Frame::new()
             .outer_margin(style.node_circle_radius)
             .stroke(Stroke::new(style.node_line_width, style.line_colour))
@@ -276,12 +294,14 @@ impl Node {
             .show(ui, |ui| {
                 // Header
 
-                self.draw_header(ui, style);
+                let ir = self.draw_header(ui, style);
 
                 // Main Content
 
                 self.draw_main(ui, style, audio_data);
-            });
+
+                ir.inner
+            })
     }
 
     /// Return the appropriate (input, output) tuple if the edge is clearly (but not necessarily) valid
@@ -449,17 +469,21 @@ impl Node {
         ui: &mut Ui,
         style: &GraphStyle,
         audio_data: &GraphAudioData,
-    ) -> InnerResponse<Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)>> {
+    ) -> InnerResponse<(
+        Option<(Arc<NodeCircleIdentifier>, Arc<NodeCircleIdentifier>)>,
+        RemoveNodeFlag,
+    )> {
         let scope = tracing::trace_span!("node_ui", index = self.index);
         let _span = scope.enter();
 
         let mut new_edge_data = None;
+        let mut remove_node_flag = RemoveNodeFlag(false);
         let resp = egui::Area::new(egui::Id::new(format!("graph_node {}", self.index)))
             .show(ui.ctx(), |ui| {
                 let top_left = ui.next_widget_position();
 
                 // Draw the basic node
-                self.draw_node_without_circles(ui, style, audio_data);
+                remove_node_flag = self.draw_node_without_circles(ui, style, audio_data).inner;
 
                 // Do the stuff with the selectible nodes
                 new_edge_data = self.implement_circles(ui, style, top_left);
@@ -470,7 +494,7 @@ impl Node {
         //println!("{:?} AAAAAAAAAAAAAA", new_edge_data);
 
         InnerResponse {
-            inner: new_edge_data,
+            inner: (new_edge_data, remove_node_flag),
             response: resp,
         }
     }

@@ -13,7 +13,11 @@ use crate::{
         Effect, add::Add, gain::Gain, output::Output, sinewave::SineWave, zero::Zero,
     },
     common::{dB, track::Track},
-    ui::nodegraph::{edge::Edge, node::Node, nodecircle::NodeCircleIdentifier},
+    ui::nodegraph::{
+        edge::Edge,
+        node::{Node, RemoveNodeFlag},
+        nodecircle::NodeCircleIdentifier,
+    },
 };
 
 mod edge;
@@ -192,6 +196,39 @@ impl NodeGraph {
         self.nodes.push(node);
     }
 
+    pub fn remove_node(&mut self, index: usize) {
+        // this fucks up a lot and need to look at all the indices
+        // firstly any effect that is inputted by effect being removed has to be set to zero
+        let effect = self.nodes[index].effect();
+        let effect_wrapper = ArcWrapper(effect.clone());
+
+        for node in &self.nodes {
+            let other_eff = node.effect();
+
+            for j in 0..other_eff.input_count() {
+                let input_eff = other_eff.get_input_at_index(j).unwrap();
+                if effect_wrapper == ArcWrapper(input_eff) {
+                    let _ = other_eff.set_input_at_index(j, self.zero.clone());
+                }
+            }
+        }
+
+        self.nodes.remove(index);
+
+        // then we also need to fix the hash while we are at it
+        if *self.hash.get(&effect_wrapper).unwrap() >= index {
+            self.hash.insert(
+                effect_wrapper,
+                *self.get_node_index_from_effect(effect).unwrap() - 1,
+            );
+        }
+    }
+
+    pub fn remove_node_from_effect(&mut self, effect: Arc<dyn Effect>) {
+        let index = self.hash[&ArcWrapper(effect)];
+        self.remove_node(index);
+    }
+
     /// This function is given data to add a new edge
     /// It checks if it is a valid edge, and if so it adds it (if not do a println for now)
     fn add_edge(&mut self, input: NodeCircleIdentifier, output: NodeCircleIdentifier) {
@@ -316,17 +353,28 @@ impl NodeGraph {
         // do node ui and find if we need a new edge
         let mut r = None;
         let mut i = None;
+        let mut removed_flag = false;
         for j in 0..self.nodes.len() {
             if j == 0 {
+                continue;
+            }
+            if j == self.nodes.len() && removed_flag {
                 continue;
             }
 
             let node = &mut self.nodes[j];
             let inner_resp = node.node_ui(ui, &self.style, &self.audio_data);
 
+            // delete the node if called for
+            if inner_resp.inner.1 == RemoveNodeFlag(true) {
+                self.remove_node(j);
+                removed_flag = true;
+            }
+
+            // store the data otherwise
             r = Some(inner_resp.response);
 
-            i = i.or(inner_resp.inner);
+            i = i.or(inner_resp.inner.0);
         }
 
         match i.clone() {

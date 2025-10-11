@@ -7,7 +7,7 @@ use std::{
 };
 
 use crate::{
-    audio::effects::{add::Add, sinewave::SineWave},
+    audio::effects::{add::Add, negative::Negative, sinewave::SineWave},
     common::dB,
 };
 
@@ -206,6 +206,7 @@ impl eframe::App for MyEguiApp {
             );
 
             self.make_effect_button(ui, Arc::new(SineWave::new(0.0, 0.0, 0.0)));
+            self.make_effect_button(ui, Arc::new(Negative::new(self.node_graph.zero.clone())));
         });
 
         egui::CentralPanel::default().show(ctx, |ui| {

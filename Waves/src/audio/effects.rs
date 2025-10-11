@@ -12,6 +12,7 @@ use crate::ui::waveformwidget::WaveformWidget;
 
 pub mod add;
 pub mod gain;
+pub mod negative;
 pub mod output;
 pub mod sinewave;
 pub mod zero;

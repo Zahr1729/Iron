@@ -87,7 +87,7 @@ impl Effect for Add {
             .get_waveform_plot_data(sample_plot_data, channel);
         self.input_1
             .lock()
-            .get_waveform_plot_data(sample_plot_data, channel);
+            .get_waveform_plot_data(&mut sample_plot_data_1, channel);
 
         //println!("{:?}", output_1);
 
