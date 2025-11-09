@@ -65,7 +65,7 @@ impl MipMapChannel {
 
     /// Returns minmap array of appropriate size, intended stepsize for each sample and a float indicating how big step size optimally should be
     /// Returns either one or two data sets being a line or the 'min' and 'max' lines
-    pub fn get_presampled_data_and_step(&self, sample_range: usize) -> (Vec<&[f32]>, usize, f32) {
+    pub fn _get_presampled_data_and_step(&self, sample_range: usize) -> (Vec<&[f32]>, usize, f32) {
         let pyramid_height = self.pyramid_data.len();
         let f = pyramid_height as f32
             - ((self.get_full_data().len() as f32 + 0.1).log2()

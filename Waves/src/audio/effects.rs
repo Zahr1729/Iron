@@ -6,9 +6,7 @@ use std::sync::Arc;
 use crate::common::Channel;
 use crate::common::mipmapchannel::SamplePlotData;
 use crate::common::track::Track;
-use crate::ui::eqwidget::EQWidget;
 use crate::ui::nodegraph::GraphStyle;
-use crate::ui::waveformwidget::WaveformWidget;
 
 pub mod add;
 pub mod gain;

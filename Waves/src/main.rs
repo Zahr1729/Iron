@@ -1,4 +1,4 @@
-use eframe::egui::{self, Button, Color32, Image, Pos2, Rect, Ui, mutex::Mutex};
+use eframe::egui::{self, Color32, Image, Ui};
 use symphonia::core::errors::Error;
 
 use std::{
@@ -19,10 +19,7 @@ mod scene;
 mod ui;
 
 use crate::{
-    audio::{
-        dag::EffectDAG,
-        effects::{Effect, gain::Gain, zero::Zero},
-    },
+    audio::effects::{Effect, gain::Gain},
     common::track::Track,
     player::{AudioThread, AudioUpdate},
     ui::{
@@ -33,8 +30,6 @@ use crate::{
 
 struct MyEguiApp {
     node_graph: NodeGraph,
-    effect_dag: Arc<EffectDAG>,
-    active_track: Option<Arc<Track>>,
     tx_loader: mpsc::Sender<Track>,
     rx_loader: mpsc::Receiver<Track>,
     audio_thread: player::AudioThread,
@@ -60,10 +55,8 @@ impl MyEguiApp {
 
         let mut s = Self {
             node_graph: NodeGraph::new(),
-            effect_dag: Arc::new(EffectDAG::new(0, vec![Arc::new(Zero)])),
             tx_loader: tx,
             rx_loader: rx,
-            active_track: Default::default(),
             audio_thread: AudioThread::new(),
             ops_in_progress: Default::default(),
             current_sample: 0,

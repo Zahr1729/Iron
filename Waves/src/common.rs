@@ -1,4 +1,4 @@
-use std::{f32::consts::PI, thread};
+use std::f32::consts::PI;
 
 use num_complex::{Complex, ComplexFloat};
 

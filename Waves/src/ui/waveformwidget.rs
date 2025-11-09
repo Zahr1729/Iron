@@ -1,13 +1,12 @@
 use crate::{
-    audio::effects::{Effect, output::Output},
-    common::{Channel, mipmapchannel::SamplePlotData, track::Track},
+    audio::effects::Effect,
+    common::{Channel, mipmapchannel::SamplePlotData},
     player::AudioCommand,
 };
-use eframe::egui::{self, Widget};
+use eframe::egui::{self};
 use std::{
     ops::RangeInclusive,
     sync::{Arc, mpsc::Sender},
-    time,
 };
 
 /// Want to be able to build a waveform widget that displays the waveform after applying the effect

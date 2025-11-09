@@ -1,9 +1,7 @@
-use std::{process::Output, sync::Arc};
+use std::sync::Arc;
 
-use eframe::egui::{
-    self, Grid, Image, InnerResponse, Label, Pos2, RadioButton, Rect, Response, RichText, Stroke,
-    Ui, Vec2,
-};
+use eframe::egui::{self, Image, InnerResponse, Label, Pos2, Rect, RichText, Stroke, Ui, Vec2};
+use tracing::warn;
 
 use crate::{
     audio::effects::Effect,
@@ -58,7 +56,7 @@ pub fn draw_waveform_plot(
     effect: Arc<dyn Effect>,
     ui: &mut Ui,
     current_sample: usize,
-    sample_rate: u32,
+    _sample_rate: u32,
     plot_size: (f32, f32),
 ) {
     let scope = tracing::trace_span!("drawing_waveform_plot");
@@ -153,28 +151,46 @@ impl Node {
                 ui.painter().add(shape_top);
                 ui.painter().add(shape_bottom);
 
-                let resp = ui.add(
-                    Label::new(
-                        RichText::new(self.effect.name())
-                            .heading()
-                            .size(
-                                style.header_height
-                                    - 2.0 * style.margin
-                                    - 2.0 * style.node_line_width,
-                            )
-                            .color(style.header_text_colour),
-                    )
-                    .selectable(false),
-                );
+                let mut remove_node_flag = RemoveNodeFlag(false);
 
-                // Exit button for things that aren't output
+                ui.horizontal(|ui| {
+                    // Force the width to be nice
+                    ui.set_width(style.node_width - 2.0 * style.margin);
 
-                let return_to_zero_button = Image::new(egui::include_image!(
-                    "../../../svg/skip-previous-svgrepo-com.svg"
-                ));
+                    ui.add(
+                        Label::new(
+                            RichText::new(self.effect.name())
+                                .heading()
+                                .size(
+                                    style.header_height
+                                        - 2.0 * style.margin
+                                        - 2.0 * style.node_line_width,
+                                )
+                                .color(style.header_text_colour),
+                        )
+                        .selectable(false),
+                    );
 
-                // return true in the inner response iff we want to close
-                RemoveNodeFlag(ui.button(return_to_zero_button).clicked())
+                    // Exit button for things that aren't output
+                    if self.effect.name() != "Output" {
+                        warn!("Assuming State by string name Output.");
+                        let max_size = Vec2 {
+                            x: style.header_text_size,
+                            y: style.header_height,
+                        };
+                        let return_to_zero_button =
+                            Image::new(egui::include_image!("../../../svg/cross-svgrepo-com.svg"))
+                                .max_size(max_size);
+
+                        ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
+                            // return true in the inner response iff we want to close
+                            remove_node_flag =
+                                RemoveNodeFlag(ui.button(return_to_zero_button).clicked());
+                        });
+                    }
+                });
+
+                remove_node_flag
             });
 
         if header.inner.0 {
@@ -188,34 +204,32 @@ impl Node {
         egui::frame::Frame::new()
             .inner_margin(style.margin)
             .show(ui, |ui| {
-                Grid::new(format!("the_AWESOME_grid_ {}", self.index))
-                    //.spacing(Vec2::ZERO)
-                    //.with_row_color(|i, s| Some(Color32::RED))
-                    .show(ui, |ui| {
-                        for i in 0..self.effect.input_count().max(self.effect.output_count()) {
-                            if i < self.effect.input_count() {
-                                ui.add(Label::new(
-                                    RichText::new("input")
-                                        .size(style.main_text_size)
-                                        .color(style.main_text_colour),
-                                ));
-                            } else {
-                                ui.add(Label::new(RichText::new("")));
-                            }
+                // Force the width to be nice
+                ui.set_width(style.node_width - 2.0 * style.margin);
 
-                            if i < self.effect.output_count() {
+                for i in 0..self.effect.input_count().max(self.effect.output_count()) {
+                    ui.horizontal(|ui| {
+                        if i < self.effect.input_count() {
+                            ui.add(Label::new(
+                                RichText::new("input")
+                                    .size(style.main_text_size)
+                                    .color(style.main_text_colour),
+                            ));
+                        } else {
+                            ui.add(Label::new(RichText::new("")));
+                        }
+
+                        if i < self.effect.output_count() {
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::RIGHT), |ui| {
                                 ui.add(Label::new(
                                     RichText::new("output")
                                         .size(style.main_text_size)
                                         .color(style.main_text_colour),
                                 ));
-                            } else {
-                                ui.add(Label::new(RichText::new("")));
-                            }
-
-                            ui.end_row();
+                            });
                         }
                     });
+                }
 
                 // implement node specific data ie gain value
                 self.effect.data_ui(ui, style);

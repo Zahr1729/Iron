@@ -1,10 +1,8 @@
 use std::sync::Arc;
 
+use eframe::egui::Ui;
 use eframe::egui::mutex::Mutex;
-use eframe::egui::{Slider, Ui};
 
-use crate::common::dB;
-use crate::ui::eqwidget::EQWidget;
 use crate::ui::nodegraph::GraphStyle;
 
 use crate::audio::effects::{Effect, EffectError};

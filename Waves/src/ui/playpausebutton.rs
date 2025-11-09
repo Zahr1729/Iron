@@ -2,17 +2,11 @@ use eframe::egui::{self, Image, Response, Widget};
 
 pub struct PlayPauseButton {
     is_paused: bool,
-    play_text: String,
-    pause_text: String,
 }
 
 impl PlayPauseButton {
     pub fn new(is_paused: bool) -> Self {
-        Self {
-            is_paused,
-            play_text: "play".to_string(),
-            pause_text: "pause".to_string(),
-        }
+        Self { is_paused }
     }
 }
 

@@ -1,11 +1,7 @@
 use std::{hash::Hash, sync::Arc};
 
-use eframe::{
-    egui::{
-        self, Color32, DragAndDrop, Grid, Id, InnerResponse, Label, LayerId, Order, Pos2, Rect,
-        Response, RichText, Sense, Shape, Stroke, Ui, UiBuilder, UiStackInfo, Vec2, ahash::HashMap,
-    },
-    epaint::{CircleShape, CubicBezierShape, PathStroke},
+use eframe::egui::{
+    Color32, Id, LayerId, Order, Pos2, Response, UiBuilder, UiStackInfo, ahash::HashMap,
 };
 
 use crate::{
@@ -31,7 +27,7 @@ pub struct GraphAudioData {
 }
 
 impl GraphAudioData {
-    pub fn new(current_sample: usize, sample_rate: u32) -> Self {
+    pub fn _new(current_sample: usize, sample_rate: u32) -> Self {
         Self {
             current_sample,
             sample_rate,
@@ -47,10 +43,12 @@ pub struct GraphStyle {
     node_line_width: f32,
     node_circle_radius: f32,
 
+    node_width: f32,
+
     edge_inner_width: f32,
     edge_line_width: f32,
 
-    edge_inner_colour: Color32,
+    _edge_inner_colour: Color32,
     edge_outer_colour: Color32,
     drag_colour: Color32,
 
@@ -62,8 +60,8 @@ pub struct GraphStyle {
     margin: f32,
     plot_margin: f32,
 
-    plot_height: f32,
-    plot_width: f32,
+    _plot_height: f32,
+    _plot_width: f32,
 
     header_height: f32,
     header_text_size: f32,
@@ -84,10 +82,12 @@ impl Default for GraphStyle {
             node_line_width: 2.0,
             node_circle_radius: 6.0,
 
+            node_width: 170.0,
+
             edge_inner_width: 6.0,
             edge_line_width: 2.0,
 
-            edge_inner_colour: Color32::RED,
+            _edge_inner_colour: Color32::RED,
             edge_outer_colour: Color32::from_rgb(200, 200, 200),
             drag_colour: Color32::from_rgb(194, 136, 11),
             // rgba(186, 79, 13, 1)
@@ -99,8 +99,8 @@ impl Default for GraphStyle {
             margin: 10.0,
             plot_margin: 0.0,
 
-            plot_height: 75.0,
-            plot_width: 150.0,
+            _plot_height: 75.0,
+            _plot_width: 150.0,
 
             header_height: 48.0,
             header_text_size: 20.0,
@@ -124,7 +124,7 @@ impl PartialEq for ArcWrapper {
         let s = Arc::into_raw(self.0.clone());
         let sother = Arc::into_raw(other.0.clone());
 
-        s == sother
+        std::ptr::addr_eq(s, sother)
     }
 }
 
@@ -149,7 +149,7 @@ pub struct NodeGraph {
 }
 
 impl NodeGraph {
-    pub fn new_non_trivial() -> Self {
+    pub fn _new_non_trivial() -> Self {
         let mut s = Self::new();
 
         let g1 = Arc::new(Gain::new(dB(-12.0), s.zero.clone()));
@@ -216,15 +216,20 @@ impl NodeGraph {
         self.nodes.remove(index);
 
         // then we also need to fix the hash while we are at it
-        if *self.hash.get(&effect_wrapper).unwrap() >= index {
-            self.hash.insert(
-                effect_wrapper,
-                *self.get_node_index_from_effect(effect).unwrap() - 1,
-            );
+        for node in self.nodes.iter() {
+            let eff_wrapper = ArcWrapper(node.effect().clone());
+            match self.hash.get(&eff_wrapper) {
+                Some(&hash_index) => {
+                    if hash_index >= index {
+                        self.hash.insert(eff_wrapper, hash_index - 1);
+                    }
+                }
+                None => (),
+            }
         }
     }
 
-    pub fn remove_node_from_effect(&mut self, effect: Arc<dyn Effect>) {
+    pub fn _remove_node_from_effect(&mut self, effect: Arc<dyn Effect>) {
         let index = self.hash[&ArcWrapper(effect)];
         self.remove_node(index);
     }

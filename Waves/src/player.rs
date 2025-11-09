@@ -1,5 +1,4 @@
 use crate::audio::effects::Effect;
-use crate::audio::effects::output::Output;
 
 use std::{
     sync::{Arc, mpsc},
