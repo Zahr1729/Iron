@@ -1,5 +1,5 @@
-use std::sync::Arc;
-use std::{f32::consts::PI, sync::Mutex};
+use std::f32::consts::PI;
+use std::sync::{Arc, Mutex};
 
 use eframe::egui::Slider;
 
@@ -17,6 +17,16 @@ impl SineWave {
             amplitude: Mutex::new(amplitude),
             frequency: Mutex::new(frequency),
             phase: Mutex::new(phase),
+        }
+    }
+}
+
+impl Default for SineWave {
+    fn default() -> Self {
+        Self {
+            amplitude: Mutex::new(0.5),
+            frequency: Mutex::new(200.0),
+            phase: Mutex::new(0.0),
         }
     }
 }
@@ -53,13 +63,13 @@ impl Effect for SineWave {
     }
 
     fn name(&self) -> &str {
-        "Sine Wave"
+        "Sine"
     }
 
     fn get_waveform_plot_data(
         &self,
         sample_plot_data: &mut crate::common::mipmapchannel::SamplePlotData,
-        channel: &crate::common::Channel,
+        _channel: &crate::common::Channel,
     ) {
         for (j, vec) in &mut sample_plot_data.data.iter_mut().enumerate() {
             for (i, f) in vec.iter_mut().enumerate() {

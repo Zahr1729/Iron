@@ -82,7 +82,7 @@ impl Default for GraphStyle {
             node_line_width: 2.0,
             node_circle_radius: 6.0,
 
-            node_width: 170.0,
+            node_width: 180.0,
 
             edge_inner_width: 6.0,
             edge_line_width: 2.0,

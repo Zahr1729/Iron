@@ -1,7 +1,5 @@
-use std::fmt::Debug;
 use std::sync::Arc;
-
-use eframe::egui::mutex::Mutex;
+use std::{fmt::Debug, sync::Mutex};
 
 use crate::audio::effects::{Effect, EffectError};
 
@@ -25,7 +23,10 @@ impl Debug for Output {
 
 impl Effect for Output {
     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
-        self.input.lock().apply(output, start_sample, channels);
+        self.input
+            .lock()
+            .unwrap()
+            .apply(output, start_sample, channels);
     }
 
     fn input_count(&self) -> usize {
@@ -39,7 +40,7 @@ impl Effect for Output {
     fn set_input_at_index(&self, index: usize, input: Arc<dyn Effect>) -> Result<(), EffectError> {
         match index {
             0 => {
-                *self.input.lock() = input;
+                *self.input.lock().unwrap() = input;
                 Ok(())
             }
             _ => Err(EffectError::OutOfBounds(index)),
@@ -48,7 +49,7 @@ impl Effect for Output {
 
     fn get_input_at_index(&self, index: usize) -> Result<Arc<dyn Effect>, EffectError> {
         match index {
-            0 => Ok(self.input.lock().clone()),
+            0 => Ok(self.input.lock().unwrap().clone()),
             _ => Err(EffectError::OutOfBounds(index)),
         }
     }
@@ -64,6 +65,7 @@ impl Effect for Output {
     ) {
         self.input
             .lock()
+            .unwrap()
             .get_waveform_plot_data(sample_plot_data, channel);
     }
 }

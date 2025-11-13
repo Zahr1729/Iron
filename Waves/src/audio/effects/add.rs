@@ -1,6 +1,4 @@
-use std::sync::Arc;
-
-use eframe::egui::mutex::Mutex;
+use std::sync::{Arc, Mutex};
 
 use crate::{
     audio::effects::{Effect, EffectError},
@@ -25,9 +23,13 @@ impl Effect for Add {
     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
         //println!("{:?}, {:?}", output, output.len());
         let mut output_1 = vec![0.0; output.len()];
-        self.input_0.lock().apply(output, start_sample, channels);
+        self.input_0
+            .lock()
+            .unwrap()
+            .apply(output, start_sample, channels);
         self.input_1
             .lock()
+            .unwrap()
             .apply(&mut output_1, start_sample, channels);
 
         //println!("{:?}", output_1);
@@ -48,11 +50,11 @@ impl Effect for Add {
     fn set_input_at_index(&self, index: usize, input: Arc<dyn Effect>) -> Result<(), EffectError> {
         match index {
             0 => {
-                *self.input_0.lock() = input;
+                *self.input_0.lock().unwrap() = input;
                 Ok(())
             }
             1 => {
-                *self.input_1.lock() = input;
+                *self.input_1.lock().unwrap() = input;
                 Ok(())
             }
             _ => Err(EffectError::OutOfBounds(index)),
@@ -61,8 +63,8 @@ impl Effect for Add {
 
     fn get_input_at_index(&self, index: usize) -> Result<Arc<dyn Effect>, EffectError> {
         match index {
-            0 => Ok(self.input_0.lock().clone()),
-            1 => Ok(self.input_1.lock().clone()),
+            0 => Ok(self.input_0.lock().unwrap().clone()),
+            1 => Ok(self.input_1.lock().unwrap().clone()),
             _ => Err(EffectError::OutOfBounds(index)),
         }
     }
@@ -84,9 +86,11 @@ impl Effect for Add {
         );
         self.input_0
             .lock()
+            .unwrap()
             .get_waveform_plot_data(sample_plot_data, channel);
         self.input_1
             .lock()
+            .unwrap()
             .get_waveform_plot_data(&mut sample_plot_data_1, channel);
 
         //println!("{:?}", output_1);

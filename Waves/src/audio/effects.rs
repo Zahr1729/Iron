@@ -9,6 +9,7 @@ use crate::common::track::Track;
 use crate::ui::nodegraph::GraphStyle;
 
 pub mod add;
+pub mod compression;
 pub mod gain;
 pub mod negative;
 pub mod output;

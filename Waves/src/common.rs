@@ -1,4 +1,7 @@
-use std::f32::consts::PI;
+use std::{
+    f32::consts::PI,
+    ops::{Add, Mul, Sub},
+};
 
 use num_complex::{Complex, ComplexFloat};
 
@@ -7,16 +10,40 @@ pub mod track;
 
 #[allow(non_camel_case_types)]
 #[repr(transparent)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, PartialOrd)]
 pub struct dB(pub f32);
 
 impl dB {
-    pub fn to_amplitude(self) -> f32 {
+    pub fn to_amplitude(&self) -> f32 {
         10.0.powf(self.0 / 20.0)
     }
 
     pub fn from_amplitude(f: f32) -> Self {
         dB(20.0 * f.log10())
+    }
+}
+
+impl Add for dB {
+    type Output = dB;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        dB(self.0 + rhs.0)
+    }
+}
+
+impl Sub for dB {
+    type Output = dB;
+
+    fn sub(self, rhs: Self) -> Self::Output {
+        dB(self.0 - rhs.0)
+    }
+}
+
+impl Mul for dB {
+    type Output = dB;
+
+    fn mul(self, rhs: Self) -> Self::Output {
+        dB(self.0 * rhs.0)
     }
 }
 

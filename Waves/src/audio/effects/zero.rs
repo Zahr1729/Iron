@@ -33,8 +33,8 @@ impl Effect for Zero {
 
     fn get_waveform_plot_data(
         &self,
-        sample_plot_data: &mut crate::common::mipmapchannel::SamplePlotData,
-        channel: &crate::common::Channel,
+        _sample_plot_data: &mut crate::common::mipmapchannel::SamplePlotData,
+        _channel: &crate::common::Channel,
     ) {
         // the sample_plot_data is defaulted to zero so thats fine
         ()

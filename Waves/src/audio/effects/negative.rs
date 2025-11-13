@@ -1,7 +1,6 @@
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use eframe::egui::Ui;
-use eframe::egui::mutex::Mutex;
 
 use crate::ui::nodegraph::GraphStyle;
 
@@ -22,7 +21,10 @@ impl Negative {
 
 impl Effect for Negative {
     fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
-        self.input.lock().apply(output, start_sample, channels);
+        self.input
+            .lock()
+            .unwrap()
+            .apply(output, start_sample, channels);
         for j in output {
             *j *= -1.0;
         }
@@ -39,7 +41,7 @@ impl Effect for Negative {
     fn set_input_at_index(&self, index: usize, input: Arc<dyn Effect>) -> Result<(), EffectError> {
         match index {
             0 => {
-                *self.input.lock() = input;
+                *self.input.lock().unwrap() = input;
                 Ok(())
             }
             _ => Err(EffectError::OutOfBounds(index)),
@@ -48,7 +50,7 @@ impl Effect for Negative {
 
     fn get_input_at_index(&self, index: usize) -> Result<Arc<dyn Effect>, EffectError> {
         match index {
-            0 => Ok(self.input.lock().clone()),
+            0 => Ok(self.input.lock().unwrap().clone()),
             _ => Err(EffectError::OutOfBounds(index)),
         }
     }
@@ -66,6 +68,7 @@ impl Effect for Negative {
     ) {
         self.input
             .lock()
+            .unwrap()
             .get_waveform_plot_data(sample_plot_data, channel);
 
         for v in &mut sample_plot_data.data {

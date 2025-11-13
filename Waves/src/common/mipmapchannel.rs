@@ -177,37 +177,12 @@ mod test {
         }
 
         let m = MipMapChannel::new(vec, 10);
-        let v = m.get_presampled_data_from_step_and_start(5, 3, 20);
+        let mut sample_plot_data = SamplePlotData::new(4, 0, 1024);
+        let v = m.get_presampled_data_from_step_and_start(&mut sample_plot_data);
 
-        assert_eq!(v.0.len(), 0)
-    }
-
-    #[test]
-    fn test_power_of_two_succeed() {
-        let mut vec = vec![0.0; 100];
-        for i in 0..100 {
-            vec[i] = i as f32;
+        assert!(!v);
+        for i in 0..25 {
+            assert_eq!(sample_plot_data.data[0][i], 4.0 * i as f32 + 3.0);
         }
-
-        let start = 5;
-        let len = 20;
-
-        let m = MipMapChannel::new(vec.clone(), 10);
-        let v = m.get_presampled_data_from_step_and_start(start, 4, len);
-
-        for i in 0..len {
-            assert_eq!(v.0[0][i], vec[start + i * 4]);
-        }
-    }
-
-    #[test]
-    fn test_power_of_two_overflow() {
-        let mut vec = vec![0.0; 100];
-        for i in 0..100 {
-            vec[i] = i as f32;
-        }
-
-        let m = MipMapChannel::new(vec, 10);
-        let v = m.get_presampled_data_from_step_and_start(5, 16, 20);
     }
 }
