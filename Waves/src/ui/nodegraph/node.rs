@@ -31,7 +31,7 @@ pub fn draw_freq_plot(
     effect: Arc<dyn Effect>,
     ui: &mut Ui,
     current_sample: usize,
-    sample_rate: u32,
+    sample_rate: usize,
     plot_size: (f32, f32),
 ) {
     let scope = tracing::trace_span!("freq_plot");
@@ -45,10 +45,10 @@ pub fn draw_freq_plot(
         let scope = tracing::trace_span!("getting data");
         let _span = scope.enter();
 
-        effect.apply(&mut sample_data, start_sample, 1);
+        effect.apply(&mut sample_data, start_sample, 1, sample_rate as usize);
     }
 
-    let eq_widget = EQWidget::new(sample_data, sample_rate, plot_size);
+    let eq_widget = EQWidget::new(sample_data, sample_rate as u32, plot_size);
     ui.add(eq_widget);
 }
 
@@ -56,7 +56,7 @@ pub fn draw_waveform_plot(
     effect: Arc<dyn Effect>,
     ui: &mut Ui,
     current_sample: usize,
-    _sample_rate: u32,
+    _sample_rate: usize,
     plot_size: (f32, f32),
 ) {
     let scope = tracing::trace_span!("drawing_waveform_plot");

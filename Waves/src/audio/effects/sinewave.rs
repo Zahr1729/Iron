@@ -32,9 +32,9 @@ impl Default for SineWave {
 }
 
 impl Effect for SineWave {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize, sample_rate: usize) {
         for (i, frame) in output.chunks_mut(channels).enumerate() {
-            let v = ((2.0 * PI * (i + start_sample) as f32 / 48000.0)
+            let v = ((2.0 * PI * (i + start_sample) as f32 / (sample_rate as f32))
                 * *self.frequency.lock().unwrap()
                 - *self.phase.lock().unwrap())
             .sin()

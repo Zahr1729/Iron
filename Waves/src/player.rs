@@ -35,6 +35,7 @@ fn get_stream_from_sample(
     output_device: Device,
     output: Arc<dyn Effect>,
     start_point: usize,
+    sample_rate: usize,
     tx: mpsc::Sender<AudioUpdate>,
 ) -> Stream {
     let config = output_device.default_output_config().unwrap().config();
@@ -48,7 +49,7 @@ fn get_stream_from_sample(
         .build_output_stream(
             &config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                output.apply(data, sample_clock, channels);
+                output.apply(data, sample_clock, channels, sample_rate);
                 sample_clock += data.len() / channels;
                 tx.send(AudioUpdate::CurrentSample(sample_clock))
                     .expect("Channel Closed");
@@ -71,6 +72,10 @@ impl AudioThread {
             let host: cpal::Host = cpal::default_host();
 
             let output_device = host.default_output_device().unwrap();
+
+            // TODO
+            // This is where sample_rate is defined, it would probably do well to be able to overwrite this.
+            let sample_rate = 48000;
 
             println!(
                 "{:?}",
@@ -101,6 +106,7 @@ impl AudioThread {
                                 output_device.clone(),
                                 track,
                                 sample,
+                                sample_rate,
                                 tx_updates.clone(),
                             );
                             new_stream.play().unwrap();
@@ -118,6 +124,7 @@ impl AudioThread {
                             output_device.clone(),
                             track,
                             sample,
+                            sample_rate,
                             tx_updates.clone(),
                         );
                         new_stream.play().unwrap();

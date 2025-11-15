@@ -20,17 +20,17 @@ impl Add {
 }
 
 impl Effect for Add {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize, sample_rate: usize) {
         //println!("{:?}, {:?}", output, output.len());
         let mut output_1 = vec![0.0; output.len()];
         self.input_0
             .lock()
             .unwrap()
-            .apply(output, start_sample, channels);
+            .apply(output, start_sample, channels, sample_rate);
         self.input_1
             .lock()
             .unwrap()
-            .apply(&mut output_1, start_sample, channels);
+            .apply(&mut output_1, start_sample, channels, sample_rate);
 
         //println!("{:?}", output_1);
 

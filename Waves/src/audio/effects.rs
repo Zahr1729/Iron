@@ -22,7 +22,7 @@ pub enum EffectError {
 }
 
 pub trait Effect: Send + Sync + Any {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize);
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize, sample_rate: usize);
     fn input_count(&self) -> usize;
     fn output_count(&self) -> usize;
     fn set_input_at_index(&self, index: usize, input: Arc<dyn Effect>) -> Result<(), EffectError>;
@@ -38,7 +38,7 @@ pub trait Effect: Send + Sync + Any {
 
 impl Effect for Track {
     /// We want this to feedback the useful output slice of data and nothing else - literally just read (and also if it is outside range then 0)
-    fn apply(&self, output: &mut [f32], sample_clock: usize, channels: usize) {
+    fn apply(&self, output: &mut [f32], sample_clock: usize, channels: usize, _sample_rate: usize) {
         // frame is the instance in time
         for (i, frame) in output.chunks_mut(channels).enumerate() {
             let (left, right) = if i + sample_clock >= self.length() as usize {

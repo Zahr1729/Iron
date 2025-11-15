@@ -22,11 +22,11 @@ impl Debug for Output {
 }
 
 impl Effect for Output {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize, sample_rate: usize) {
         self.input
             .lock()
             .unwrap()
-            .apply(output, start_sample, channels);
+            .apply(output, start_sample, channels, sample_rate);
     }
 
     fn input_count(&self) -> usize {

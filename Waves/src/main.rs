@@ -204,6 +204,7 @@ impl eframe::App for MyEguiApp {
                 ui,
                 Arc::new(Compression::new(
                     1.0,
+                    5.0,
                     dB(-20.0),
                     0.0,
                     1.0,

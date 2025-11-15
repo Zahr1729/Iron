@@ -23,11 +23,11 @@ mod nodecircle;
 #[derive(Default, Debug)]
 pub struct GraphAudioData {
     pub current_sample: usize,
-    pub sample_rate: u32,
+    pub sample_rate: usize,
 }
 
 impl GraphAudioData {
-    pub fn _new(current_sample: usize, sample_rate: u32) -> Self {
+    pub fn _new(current_sample: usize, sample_rate: usize) -> Self {
         Self {
             current_sample,
             sample_rate,

@@ -5,7 +5,13 @@ use crate::audio::effects::{Effect, EffectError};
 pub struct Zero;
 
 impl Effect for Zero {
-    fn apply(&self, output: &mut [f32], _start_sample: usize, _channels: usize) {
+    fn apply(
+        &self,
+        output: &mut [f32],
+        _start_sample: usize,
+        _channels: usize,
+        _sample_rate: usize,
+    ) {
         for j in output {
             *j = 0.0;
         }

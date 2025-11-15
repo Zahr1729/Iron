@@ -20,11 +20,11 @@ impl Negative {
 }
 
 impl Effect for Negative {
-    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize) {
+    fn apply(&self, output: &mut [f32], start_sample: usize, channels: usize, sample_rate: usize) {
         self.input
             .lock()
             .unwrap()
-            .apply(output, start_sample, channels);
+            .apply(output, start_sample, channels, sample_rate);
         for j in output {
             *j *= -1.0;
         }
